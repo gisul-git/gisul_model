@@ -510,8 +510,53 @@ if st.button(
 
     try:
         label = ENDPOINT_LABELS.get(endpoint, endpoint)
-        with st.spinner(f"Calling {label} — generating {num_questions} item(s)…"):
-            response = requests.post(url, json=payload, timeout=300)
+        # Stream the request with a long timeout and show live status updates
+        status_box = st.empty()
+        elapsed_placeholder = st.empty()
+        start_ts = time.time()
+
+        def post_with_progress():
+            return requests.post(url, json=payload, timeout=900)
+
+        import threading
+        result_holder = {}
+        error_holder  = {}
+
+        def run_request():
+            try:
+                result_holder["response"] = requests.post(url, json=payload, timeout=900)
+            except Exception as e:
+                error_holder["error"] = e
+
+        thread = threading.Thread(target=run_request, daemon=True)
+        thread.start()
+
+        msgs = [
+            "Model is loading the prompt…",
+            "Generating question structure…",
+            "Model is writing the content — this takes a moment…",
+            "Still generating — complex questions take longer on local GPU…",
+            "Almost there — finalising the response…",
+            "Taking longer than usual — GPU is working hard, please wait…",
+            "Still running — do not close this tab…",
+        ]
+        msg_idx = 0
+        while thread.is_alive():
+            elapsed = int(time.time() - start_ts)
+            mins, secs = divmod(elapsed, 60)
+            time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
+            status_box.info(f"⏳ {msgs[min(msg_idx, len(msgs)-1)]}  |  Elapsed: **{time_str}**")
+            import time as _time
+            _time.sleep(4)
+            msg_idx += 1
+
+        status_box.empty()
+        elapsed_placeholder.empty()
+
+        if "error" in error_holder:
+            raise error_holder["error"]
+
+        response = result_holder["response"]
 
         status = response.status_code
 
@@ -529,7 +574,7 @@ if st.button(
     except requests.exceptions.ConnectionError:
         st.error("❌ Cannot connect to the API server at `localhost:8000`. Is it running?")
     except requests.exceptions.Timeout:
-        st.error("⏱ Request timed out (300 s). The model may still be generating — check server logs.")
+        st.warning("⏳ The model is still generating. The server is still running — please try again in a moment or reduce the number of questions.")
     except Exception as e:
         st.error(f"Unexpected error: {e}")
     finally:
