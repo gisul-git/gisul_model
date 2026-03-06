@@ -1,30 +1,129 @@
-After unzipping, in WSL terminal:
+Yes 👍 **Do everything inside WSL**, not in Windows PowerShell.
 
-**1. Install dependencies**
+Because:
+
+* Your project runs with **Linux dependencies (torch, bitsandbytes, uvicorn, etc.)**
+* Your **GPU setup and Python environment are in WSL**
+* The backend and Streamlit app will run properly there.
+
+---
+
+# Steps on the other system (inside WSL)
+
+### 1️⃣ Open WSL terminal
+
+Example:
+
 ```bash
-pip install fastapi uvicorn transformers torch accelerate bitsandbytes cachetools pydantic streamlit requests pandas
-```
-
-**2. Start the backend**
-```bash
-uvicorn qwen_model_server_script:app --host 0.0.0.0 --port 8000
-```
-Wait until you see `Model loaded` in the logs.
-
-**3. In a new WSL terminal, start the frontend**
-```bash
-streamlit run app.py
-```
-
-**4. Open browser**
-```
-http://localhost:8501
+Ubuntu
 ```
 
 ---
 
-**If the other machine has no GPU**, add this before starting the backend:
+### 2️⃣ Go to a working folder
+
+Example:
+
 ```bash
-export CUDA_VISIBLE_DEVICES=""
+cd ~
+mkdir projects
+cd projects
 ```
-But the model will be very slow on CPU.
+
+---
+
+### 3️⃣ Clone the repo
+
+```bash
+git clone https://github.com/gisul-git/gisul_model.git
+```
+
+Then enter the folder:
+
+```bash
+cd gisul_model
+```
+
+---
+
+### 4️⃣ Create virtual environment
+
+```bash
+python3 -m venv venv
+```
+
+Activate it:
+
+```bash
+source venv/bin/activate
+```
+
+---
+
+### 5️⃣ Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 6️⃣ Run backend
+
+```bash
+uvicorn qwen_model_server_script:app --host 0.0.0.0 --port 8000
+```
+
+You should see:
+
+```
+Uvicorn running on http://0.0.0.0:8000
+```
+
+---
+
+### 7️⃣ Open another WSL terminal and run frontend
+
+```bash
+cd ~/projects/gisul_model
+source venv/bin/activate
+streamlit run app.py
+```
+
+---
+
+### 8️⃣ Open browser
+
+In **Windows browser** open:
+
+```
+http://localhost:8501
+```
+
+It will automatically connect to WSL.
+
+---
+
+# When you update code later
+
+Inside WSL run:
+
+```bash
+git pull
+```
+
+That will download the latest version.
+
+---
+
+✅ **Simple rule**
+
+| Where   | What to do                    |
+| ------- | ----------------------------- |
+| Windows | Open browser                  |
+| WSL     | Run backend + Streamlit + git |
+
+---
+
+If you want, I can also show **a much cleaner way to run this project using Docker**, so you can run the entire system with **one command on any machine**. It will save a lot of setup time.
+
