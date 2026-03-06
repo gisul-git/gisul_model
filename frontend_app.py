@@ -26,6 +26,14 @@ if "last_response" not in st.session_state:
     st.session_state.last_response = None
 if "last_endpoint" not in st.session_state:
     st.session_state.last_endpoint = None
+if "pending_job_id" not in st.session_state:
+    st.session_state.pending_job_id = None
+if "pending_poll_url" not in st.session_state:
+    st.session_state.pending_poll_url = None
+if "job_start_ts" not in st.session_state:
+    st.session_state.job_start_ts = None
+if "poll_msg_idx" not in st.session_state:
+    st.session_state.poll_msg_idx = 0
 
 generating = st.session_state.is_generating
 
@@ -501,13 +509,9 @@ if st.button(
     with st.expander("📨 Request Payload", expanded=False):
         st.json(payload)
 
-    st.session_state.is_generating = True
-    st.session_state.last_response = None
-    st.session_state.last_endpoint = endpoint
-
     try:
-        # Step 1 — POST to get job_id (should return in < 1s)
-        with st.spinner("Submitting request to server…"):
+        # POST to get job_id — should return in < 1s
+        with st.spinner("Submitting to server…"):
             submit_resp = requests.post(url, json=payload, timeout=30)
 
         if submit_resp.status_code != 200:
@@ -516,90 +520,96 @@ if st.button(
                 st.json(submit_resp.json())
             except Exception:
                 st.text(submit_resp.text)
-            st.session_state.is_generating = False
             st.stop()
 
         job_data = submit_resp.json()
 
-        # If result was cached and returned instantly
+        # Cache hit — result returned immediately
         if job_data.get("status") == "complete" and "result" in job_data:
-            st.session_state.last_response = job_data["result"]
-            st.success("✅ Returned from cache instantly")
-            st.session_state.is_generating = False
+            st.session_state.last_response  = job_data["result"]
+            st.session_state.last_endpoint  = endpoint
+            st.session_state.pending_job_id = None
+            st.session_state.is_generating  = False
             st.rerun()
 
         job_id = job_data.get("job_id")
         if not job_id:
             st.error("❌ Server did not return a job_id")
-            st.session_state.is_generating = False
             st.stop()
 
-        # Step 2 — Poll until complete
-        poll_url = f"{API_BASE}/job/{job_id}"
-        status_box    = st.empty()
-        progress_bar  = st.empty()
-        elapsed_box   = st.empty()
-
-        poll_msgs = [
-            "📋 Job queued — waiting for GPU…",
-            "⚙️ Model is processing your request…",
-            "🧠 Generating content — this takes a moment on local GPU…",
-            "⏳ Still generating — complex questions take longer…",
-            "🔄 GPU is working hard — almost there…",
-            "💡 Taking longer than usual — please keep this tab open…",
-            "🕐 Still running — do not close this tab…",
-        ]
-        msg_idx   = 0
-        start_ts  = time.time()
-        poll_interval = 3  # seconds
-
-        while True:
-            import time as _t
-            _t.sleep(poll_interval)
-
-            elapsed   = int(time.time() - start_ts)
-            mins, sec = divmod(elapsed, 60)
-            time_str  = f"{mins}m {sec}s" if mins else f"{sec}s"
-
-            try:
-                poll_resp = requests.get(poll_url, timeout=10)
-                poll_data = poll_resp.json()
-            except Exception as poll_err:
-                status_box.warning(f"⚠️ Poll error (will retry): {poll_err}")
-                continue
-
-            status = poll_data.get("status", "pending")
-
-            if status == "complete":
-                status_box.empty()
-                progress_bar.empty()
-                elapsed_box.empty()
-                st.session_state.last_response = poll_data["result"]
-                st.success(f"✅ Done in {time_str}")
-                break
-
-            elif status == "failed":
-                status_box.empty()
-                progress_bar.empty()
-                elapsed_box.empty()
-                err = poll_data.get("error", "Unknown error")
-                st.error(f"❌ Generation failed: {err}")
-                break
-
-            else:
-                # pending or processing
-                msg = poll_msgs[min(msg_idx, len(poll_msgs) - 1)]
-                status_box.info(f"{msg}  |  Elapsed: **{time_str}**")
-                msg_idx += 1
+        # Store job state — polling happens on reruns below
+        st.session_state.pending_job_id  = job_id
+        st.session_state.pending_poll_url = f"{API_BASE}/job/{job_id}"
+        st.session_state.job_start_ts    = time.time()
+        st.session_state.poll_msg_idx    = 0
+        st.session_state.is_generating   = True
+        st.session_state.last_response   = None
+        st.session_state.last_endpoint   = endpoint
+        st.rerun()  # Kick off first poll cycle
 
     except requests.exceptions.ConnectionError:
         st.error("❌ Cannot connect to server at `localhost:8000`. Is it running?")
     except requests.exceptions.Timeout:
-        st.warning("⏳ Submission timed out. Server may be overloaded — try again.")
+        st.warning("⏳ Server did not respond in 30s — may be overloaded. Try again.")
     except Exception as e:
         st.error(f"Unexpected error: {e}")
-    finally:
-        st.session_state.is_generating = False
+
+
+# ─────────────────────────────────────────────
+# POLLING LOOP — runs on every rerun while job is pending
+# One GET per rerun, then sleeps 3s and triggers next rerun.
+# No blocking while-loop — Streamlit-safe.
+# ─────────────────────────────────────────────
+POLL_MSGS = [
+    "📋 Job queued — waiting for GPU…",
+    "⚙️ Model is processing your request…",
+    "🧠 Generating content — this takes a moment on local GPU…",
+    "⏳ Still generating — complex questions take longer…",
+    "🔄 GPU is working hard — almost there…",
+    "💡 Taking longer than usual — please keep this tab open…",
+    "🕐 Still running — do not close this tab…",
+]
+
+if st.session_state.pending_job_id:
+    poll_url  = st.session_state.pending_poll_url
+    start_ts  = st.session_state.job_start_ts or time.time()
+    msg_idx   = st.session_state.poll_msg_idx
+
+    elapsed      = int(time.time() - start_ts)
+    mins, sec    = divmod(elapsed, 60)
+    time_str     = f"{mins}m {sec}s" if mins else f"{sec}s"
+    msg          = POLL_MSGS[min(msg_idx, len(POLL_MSGS) - 1)]
+
+    status_box = st.info(f"{msg}  |  Elapsed: **{time_str}**")
+
+    try:
+        poll_resp = requests.get(poll_url, timeout=10)
+        poll_data = poll_resp.json()
+        status    = poll_data.get("status", "pending")
+    except Exception as poll_err:
+        st.warning(f"⚠️ Poll error (will retry): {poll_err}")
+        status = "pending"
+        poll_data = {}
+
+    if status == "complete":
+        st.session_state.last_response  = poll_data["result"]
+        st.session_state.pending_job_id = None
+        st.session_state.is_generating  = False
+        st.session_state.poll_msg_idx   = 0
+        st.rerun()
+
+    elif status == "failed":
+        err = poll_data.get("error", "Unknown error")
+        st.session_state.pending_job_id = None
+        st.session_state.is_generating  = False
+        st.session_state.poll_msg_idx   = 0
+        st.error(f"❌ Generation failed: {err}")
+
+    else:
+        # Still processing — wait 3s then rerun (one poll per rerun)
+        st.session_state.poll_msg_idx = msg_idx + 1
+        time.sleep(3)
+        st.rerun()
 
 # ─────────────────────────────────────────────
 # DISPLAY — render last_response from session state
