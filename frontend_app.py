@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import time
 
 API_BASE = "http://localhost:8000/api/v1"
 
@@ -487,9 +488,6 @@ def render_topic(t: dict, index: int):
 # ─────────────────────────────────────────────
 # GENERATE BUTTON
 # ─────────────────────────────────────────────
-# ─────────────────────────────────────────────
-# GENERATE BUTTON
-# ─────────────────────────────────────────────
 if st.button(
     "⏳ Generating…" if generating else "🚀 Generate",
     type="primary",
@@ -503,82 +501,104 @@ if st.button(
     with st.expander("📨 Request Payload", expanded=False):
         st.json(payload)
 
-    # Set flag so sidebar buttons disable on next rerun
     st.session_state.is_generating = True
     st.session_state.last_response = None
     st.session_state.last_endpoint = endpoint
 
     try:
-        label = ENDPOINT_LABELS.get(endpoint, endpoint)
-        # Stream the request with a long timeout and show live status updates
-        status_box = st.empty()
-        elapsed_placeholder = st.empty()
-        start_ts = time.time()
+        # Step 1 — POST to get job_id (should return in < 1s)
+        with st.spinner("Submitting request to server…"):
+            submit_resp = requests.post(url, json=payload, timeout=30)
 
-        def post_with_progress():
-            return requests.post(url, json=payload, timeout=900)
-
-        import threading
-        result_holder = {}
-        error_holder  = {}
-
-        def run_request():
+        if submit_resp.status_code != 200:
+            st.error(f"❌ Server returned HTTP {submit_resp.status_code}")
             try:
-                result_holder["response"] = requests.post(url, json=payload, timeout=900)
-            except Exception as e:
-                error_holder["error"] = e
-
-        thread = threading.Thread(target=run_request, daemon=True)
-        thread.start()
-
-        msgs = [
-            "Model is loading the prompt…",
-            "Generating question structure…",
-            "Model is writing the content — this takes a moment…",
-            "Still generating — complex questions take longer on local GPU…",
-            "Almost there — finalising the response…",
-            "Taking longer than usual — GPU is working hard, please wait…",
-            "Still running — do not close this tab…",
-        ]
-        msg_idx = 0
-        while thread.is_alive():
-            elapsed = int(time.time() - start_ts)
-            mins, secs = divmod(elapsed, 60)
-            time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
-            status_box.info(f"⏳ {msgs[min(msg_idx, len(msgs)-1)]}  |  Elapsed: **{time_str}**")
-            import time as _time
-            _time.sleep(4)
-            msg_idx += 1
-
-        status_box.empty()
-        elapsed_placeholder.empty()
-
-        if "error" in error_holder:
-            raise error_holder["error"]
-
-        response = result_holder["response"]
-
-        status = response.status_code
-
-        if status != 200:
-            st.error(f"❌ Server returned HTTP {status}")
-            try:
-                st.json(response.json())
+                st.json(submit_resp.json())
             except Exception:
-                st.text(response.text)
-        else:
-            data = response.json()
-            st.session_state.last_response = data
-            st.success(f"✅ HTTP {status} — received response")
+                st.text(submit_resp.text)
+            st.session_state.is_generating = False
+            st.stop()
+
+        job_data = submit_resp.json()
+
+        # If result was cached and returned instantly
+        if job_data.get("status") == "complete" and "result" in job_data:
+            st.session_state.last_response = job_data["result"]
+            st.success("✅ Returned from cache instantly")
+            st.session_state.is_generating = False
+            st.rerun()
+
+        job_id = job_data.get("job_id")
+        if not job_id:
+            st.error("❌ Server did not return a job_id")
+            st.session_state.is_generating = False
+            st.stop()
+
+        # Step 2 — Poll until complete
+        poll_url = f"{API_BASE}/job/{job_id}"
+        status_box    = st.empty()
+        progress_bar  = st.empty()
+        elapsed_box   = st.empty()
+
+        poll_msgs = [
+            "📋 Job queued — waiting for GPU…",
+            "⚙️ Model is processing your request…",
+            "🧠 Generating content — this takes a moment on local GPU…",
+            "⏳ Still generating — complex questions take longer…",
+            "🔄 GPU is working hard — almost there…",
+            "💡 Taking longer than usual — please keep this tab open…",
+            "🕐 Still running — do not close this tab…",
+        ]
+        msg_idx   = 0
+        start_ts  = time.time()
+        poll_interval = 3  # seconds
+
+        while True:
+            import time as _t
+            _t.sleep(poll_interval)
+
+            elapsed   = int(time.time() - start_ts)
+            mins, sec = divmod(elapsed, 60)
+            time_str  = f"{mins}m {sec}s" if mins else f"{sec}s"
+
+            try:
+                poll_resp = requests.get(poll_url, timeout=10)
+                poll_data = poll_resp.json()
+            except Exception as poll_err:
+                status_box.warning(f"⚠️ Poll error (will retry): {poll_err}")
+                continue
+
+            status = poll_data.get("status", "pending")
+
+            if status == "complete":
+                status_box.empty()
+                progress_bar.empty()
+                elapsed_box.empty()
+                st.session_state.last_response = poll_data["result"]
+                st.success(f"✅ Done in {time_str}")
+                break
+
+            elif status == "failed":
+                status_box.empty()
+                progress_bar.empty()
+                elapsed_box.empty()
+                err = poll_data.get("error", "Unknown error")
+                st.error(f"❌ Generation failed: {err}")
+                break
+
+            else:
+                # pending or processing
+                msg = poll_msgs[min(msg_idx, len(poll_msgs) - 1)]
+                status_box.info(f"{msg}  |  Elapsed: **{time_str}**")
+                msg_idx += 1
 
     except requests.exceptions.ConnectionError:
-        st.error("❌ Cannot connect to the API server at `localhost:8000`. Is it running?")
+        st.error("❌ Cannot connect to server at `localhost:8000`. Is it running?")
     except requests.exceptions.Timeout:
-        st.warning("⏳ The model is still generating. The server is still running — please try again in a moment or reduce the number of questions.")
+        st.warning("⏳ Submission timed out. Server may be overloaded — try again.")
     except Exception as e:
         st.error(f"Unexpected error: {e}")
     finally:
-        # Always clear the flag so sidebar re-enables after request completes
         st.session_state.is_generating = False
 
 # ─────────────────────────────────────────────

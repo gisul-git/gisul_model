@@ -1,5 +1,5 @@
 """
-Qwen Question Generation API - PRODUCTION HARDENED VERSION v7.0
+Qwen Question Generation API - PRODUCTION HARDENED VERSION v9.0
 ===============================================================
 ✅ ALL 6 endpoints working
 ✅ Deterministic-first MCQ pipeline for code/output-prediction topics
@@ -111,7 +111,7 @@ logger = logging.getLogger(__name__)
 # ----------------------------------------------------------------------------
 # BATCH CONFIG
 # ----------------------------------------------------------------------------
-BATCH_SIZE_MAX = 8
+BATCH_SIZE_MAX = 2  # Safe for 8GB VRAM — each extra request ~1.5GB
 BATCH_TIMEOUT = 0.5
 
 # ----------------------------------------------------------------------------
@@ -121,6 +121,9 @@ MODEL = None
 TOKENIZER = None
 
 RESPONSE_CACHE = TTLCache(maxsize=1000, ttl=3600)
+
+# Async job store — holds results for polling. TTL=1hr auto-cleans old jobs.
+JOB_STORE = TTLCache(maxsize=500, ttl=3600)
 
 STATS = {
     "total_requests": 0,
@@ -150,7 +153,7 @@ pending_results = {}
 # ----------------------------------------------------------------------------
 # FASTAPI APP
 # ----------------------------------------------------------------------------
-app = FastAPI(title="Qwen Question Generation API - Production Hardened", version="8.0.0")
+app = FastAPI(title="Qwen Question Generation API - Production Hardened", version="9.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ----------------------------------------------------------------------------
@@ -1091,7 +1094,22 @@ MCQ TO VALIDATE:
 #         ever triggering a proper retry.
 # ============================================================================
 
-def verify_mcq_with_llm(mcq: dict) -> dict:
+def _sync_verify(text_input):
+    """Pure sync GPU call for MCQ verifier — runs in thread pool."""
+    inputs = TOKENIZER(text_input, return_tensors="pt").to(MODEL.device)
+    return MODEL.generate(
+        **inputs,
+        max_new_tokens=800,
+        temperature=0.2,
+        do_sample=True,
+        top_p=0.9,
+        pad_token_id=TOKENIZER.eos_token_id
+    )
+
+
+async def verify_mcq_with_llm(mcq: dict) -> dict:
+    """Async MCQ verifier — GPU call runs in executor, event loop stays free."""
+    loop = asyncio.get_event_loop()
     for attempt in range(2):
         try:
             messages = [
@@ -1099,22 +1117,11 @@ def verify_mcq_with_llm(mcq: dict) -> dict:
                 {"role": "user", "content": build_mcq_verifier_prompt(mcq)}
             ]
             text = TOKENIZER.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            inputs = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
-            output = MODEL.generate(
-                **inputs,
-                max_new_tokens=800,
-                temperature=0.2,
-                do_sample=True,
-                top_p=0.9,
-                pad_token_id=TOKENIZER.eos_token_id
-            )
+            output = await loop.run_in_executor(None, _sync_verify, text)
             decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
             decoded = decoded.split("assistant")[-1].strip()
             verified = extract_json(decoded)
 
-            # FIX 1: Check if verifier explicitly rejected the MCQ for missing concept.
-            # Previously this dict was returned as-is, skipping this check entirely.
-            # Now we raise immediately so _run_mcq_pipeline() triggers a retry.
             if verified.get("rejected") is True:
                 rejection_reason = verified.get("rejection_reason", "unknown")
                 raise RuntimeError(
@@ -1124,7 +1131,6 @@ def verify_mcq_with_llm(mcq: dict) -> dict:
             return verified
 
         except RuntimeError:
-            # Re-raise RuntimeError (our own rejection) without retrying — let caller handle.
             raise
         except Exception as e:
             logger.warning(f"MCQ verification attempt {attempt + 1} failed: {e}")
@@ -1610,7 +1616,26 @@ def _safe_literal_eval(s: str) -> bool:
 # BATCH GENERATION
 # ============================================================================
 
-def generate_batch(prompts: List[str]):
+def _sync_generate_mcq(inputs):
+    """Pure sync GPU call for MCQ — runs in thread pool so event loop stays free."""
+    return MODEL.generate(
+        **inputs,
+        max_new_tokens=1000,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.1,
+        do_sample=True,
+        pad_token_id=TOKENIZER.eos_token_id
+    )
+
+
+async def generate_batch(prompts: List[str]):
+    """
+    Async wrapper around MODEL.generate() for MCQ pipeline.
+    Runs blocking GPU call in thread pool executor — event loop stays free.
+    """
+    loop = asyncio.get_event_loop()
+
     messages = []
     for p in prompts:
         messages.append([
@@ -1633,15 +1658,7 @@ def generate_batch(prompts: List[str]):
     inputs = TOKENIZER(texts, return_tensors="pt", padding=True, truncation=True).to(MODEL.device)
 
     start = time.time()
-    outputs = MODEL.generate(
-        **inputs,
-        max_new_tokens=1000,
-        temperature=0.7,
-        top_p=0.9,
-        repetition_penalty=1.1,
-        do_sample=True,
-        pad_token_id=TOKENIZER.eos_token_id
-    )
+    outputs = await loop.run_in_executor(None, _sync_generate_mcq, inputs)
     duration = time.time() - start
 
     responses = [
@@ -2005,7 +2022,7 @@ def build_deterministic_mcq(context: dict) -> dict:
 # No LLM verifier needed: the Python interpreter IS the verifier.
 # ============================================================================
 
-def _run_deterministic_mcq_pipeline(raw_text: str) -> dict:
+async def _run_deterministic_mcq_pipeline(raw_text: str) -> dict:
     """
     Deterministic-first pipeline for executable/output-prediction MCQs.
 
@@ -2061,7 +2078,7 @@ def _run_deterministic_mcq_pipeline(raw_text: str) -> dict:
 #   full MCQ JSON (has "options" + "isCorrect")     → existing LLM pipeline
 # ============================================================================
 
-def _run_mcq_pipeline(raw_text: str) -> dict:
+async def _run_mcq_pipeline(raw_text: str) -> dict:
     """
     Unified entry point. Routes to one of two sub-pipelines based on JSON shape:
 
@@ -2087,7 +2104,7 @@ def _run_mcq_pipeline(raw_text: str) -> dict:
     logger.info("Routing to conceptual MCQ pipeline (framework/theory topic)")
 
     # Step 1: LLM verification
-    verified_mcq = verify_mcq_with_llm(raw_mcq)
+    verified_mcq = await verify_mcq_with_llm(raw_mcq)
 
     # Step 2: Ambiguity check — reject vague opinion-based questions
     is_ambiguous, ambiguity_reason = detect_ambiguity(verified_mcq)
@@ -2179,7 +2196,7 @@ async def process_mcq_batch():
         keys.append(cache_key)
         ids.append(req_id)
 
-    responses, per_req_time = generate_batch(prompts)
+    responses, per_req_time = await generate_batch(prompts)
 
     STATS["batches_processed"] += 1
     STATS["total_batched_requests"] += len(batch)
@@ -2191,7 +2208,7 @@ async def process_mcq_batch():
 
         # Primary attempt: full pipeline (deterministic or conceptual, auto-routed)
         try:
-            final_mcq = _run_mcq_pipeline(text)
+            final_mcq = await _run_mcq_pipeline(text)
         except Exception as e:
             primary_error = e
             logger.warning(
@@ -2217,12 +2234,12 @@ async def process_mcq_batch():
 
         try:
             retry_prompt = build_mcq_prompt(batch[i][1])
-            retry_texts, _ = generate_batch([retry_prompt])
+            retry_texts, _ = await generate_batch([retry_prompt])
 
             if not retry_texts or not retry_texts[0].strip():
                 raise RuntimeError("Retry generation returned empty response")
 
-            final_mcq = _run_mcq_pipeline(retry_texts[0])
+            final_mcq = await _run_mcq_pipeline(retry_texts[0])
 
             final_mcq.update({
                 "generation_time_seconds": per_req_time,
@@ -2282,7 +2299,26 @@ async def enqueue_and_wait(data: dict, cache_key: str):
 # GENERIC BATCHING
 # ============================================================================
 
-def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
+def _sync_generate(inputs, max_tokens):
+    """Pure sync GPU call — runs in thread pool so event loop stays free."""
+    return MODEL.generate(
+        **inputs,
+        max_new_tokens=max_tokens,
+        temperature=0.7,
+        do_sample=True,
+        top_p=0.9,
+        pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
+    )
+
+
+async def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
+    """
+    Async wrapper around MODEL.generate().
+    Runs the blocking GPU call in a thread pool executor so the FastAPI
+    event loop stays free during generation (fixes timeout on concurrent requests).
+    """
+    loop = asyncio.get_event_loop()
+
     batch_messages = []
     for prompt in prompts:
         messages = [
@@ -2295,14 +2331,18 @@ def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
     inputs = TOKENIZER(batch_messages, return_tensors="pt", padding=True, truncation=True).to(MODEL.device)
     start_time = time.time()
 
-    outputs = MODEL.generate(
-        **inputs,
-        max_new_tokens=max_tokens,
-        temperature=0.7,
-        do_sample=True,
-        top_p=0.9,
-        pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
-    )
+    try:
+        # Run blocking MODEL.generate() in thread pool — frees event loop
+        outputs = await loop.run_in_executor(None, _sync_generate, inputs, max_tokens)
+    except torch.cuda.OutOfMemoryError:
+        logger.warning(f"CUDA OOM on batch of {len(prompts)} — clearing cache and retrying as batch_size=1")
+        torch.cuda.empty_cache()
+        if len(prompts) == 1:
+            raise
+        single_input = TOKENIZER([batch_messages[0]], return_tensors="pt", padding=True, truncation=True).to(MODEL.device)
+        outputs = await loop.run_in_executor(None, _sync_generate, single_input, max_tokens)
+        prompts = prompts[:1]
+        logger.info("OOM recovery: processed 1 of original batch")
 
     generation_time = time.time() - start_time
 
@@ -2341,7 +2381,7 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
         cache_keys.append(cache_key)
 
     try:
-        responses, total_time, per_request_time = generate_batch_with_qwen(prompts, max_tokens)
+        responses, total_time, per_request_time = await generate_batch_with_qwen(prompts, max_tokens)
 
         STATS["batches_processed"] += 1
         STATS["total_batched_requests"] += batch_size
@@ -2358,7 +2398,7 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
                 logger.error(f"Error processing batch item {i}: {e}. Retrying...")
                 try:
                     retry_prompt = prompt_builder_func(batch[i][1])
-                    retry_responses, _, _ = generate_batch_with_qwen([retry_prompt], max_tokens)
+                    retry_responses, _, _ = await generate_batch_with_qwen([retry_prompt], max_tokens)
                     retry_result = extract_json(retry_responses[0])
                     retry_result.update({"generation_time_seconds": per_request_time, "batched": True,
                                          "batch_size": batch_size, "cache_hit": False})
@@ -2371,6 +2411,14 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
                         "success": False,
                         "error": f"Generation failed: {str(retry_error)}"
                     }
+    except torch.cuda.OutOfMemoryError as oom:
+        logger.error(f"CUDA OOM in batch processing — freeing cache, marking all items failed for retry")
+        torch.cuda.empty_cache()
+        for request_id in request_ids:
+            pending_results[request_id] = {
+                "success": False,
+                "error": "GPU ran out of memory. Please try again with fewer simultaneous requests."
+            }
     except Exception as e:
         logger.error(f"Batch processing error: {e}")
         for request_id in request_ids:
@@ -2771,6 +2819,107 @@ def calculate_aiml_token_limit(request_data: dict) -> int:
     return min(total, 12000)
 
 
+
+# ============================================================================
+# ASYNC JOB QUEUE SYSTEM
+# Each endpoint now returns a job_id immediately.
+# The client polls GET /api/v1/job/{job_id} until status = "complete" | "failed".
+# This prevents HTTP timeouts on slow generations (90-180s on 8GB GPU).
+# ============================================================================
+
+async def _run_generation_task(job_id: str, endpoint: str, request_data: dict,
+                               prompt_builder_func, max_tokens: int,
+                               num_q: int, use_cache: bool):
+    """
+    Background worker — runs the full generation loop for any endpoint.
+    Stores result in JOB_STORE when done. All existing batch/cache/retry
+    logic is preserved — this is just a wrapper that fires in the background.
+    """
+    JOB_STORE[job_id] = {"status": "processing", "result": None, "error": None}
+    try:
+        # ── TOPICS: single call, result is already fully shaped {"topics":[...], ...}
+        # Do NOT loop or wrap in a list — return directly.
+        if endpoint == "topics":
+            item_data = {k: v for k, v in request_data.items() if k not in ("num_questions",)}
+            cache_key = generate_cache_key("topics", item_data)
+            if use_cache:
+                cached = get_from_cache(cache_key)
+                if cached:
+                    cached["cache_hit"] = True
+                    JOB_STORE[job_id] = {"status": "complete", "result": cached, "error": None}
+                    logger.info(f"Job {job_id[:8]} topics — cache hit")
+                    return
+            result = await add_to_batch_and_wait("topics", item_data, cache_key, prompt_builder_func, max_tokens)
+            result["cache_hit"] = False
+            result["batched"] = True
+            result["batch_size"] = num_q
+            save_to_cache(cache_key, result)
+            JOB_STORE[job_id] = {"status": "complete", "result": result, "error": None}
+            logger.info(f"Job {job_id[:8]} complete — topics generated")
+            return
+
+        # ── ALL OTHER ENDPOINTS: loop and collect items into a list ───────────
+        all_items = []
+        any_cache_hit = False
+        total_time = 0.0
+
+        for i in range(num_q):
+            item_data = {k: v for k, v in request_data.items() if k not in ("num_questions",)}
+            cache_key = generate_cache_key(endpoint, {**item_data, "question_index": i})
+
+            if use_cache:
+                cached = get_from_cache(cache_key)
+                if cached:
+                    any_cache_hit = True
+                    all_items.append(cached)
+                    continue
+
+            result = await add_to_batch_and_wait(endpoint, item_data, cache_key, prompt_builder_func, max_tokens)
+            save_to_cache(cache_key, result)
+            total_time += result.get("generation_time_seconds", 0)
+            all_items.append(result)
+
+        key_map = {
+            "mcq":        "questions",
+            "subjective": "questions",
+            "coding":     "coding_problems",
+            "sql":        "sql_problems",
+            "aiml":       "aiml_problems",
+        }
+        result_key = key_map.get(endpoint, "items")
+        JOB_STORE[job_id] = {
+            "status": "complete",
+            "result": {
+                result_key: all_items,
+                "generation_time_seconds": round(total_time, 3),
+                "cache_hit": any_cache_hit,
+                "batched": True,
+                "batch_size": num_q,
+            },
+            "error": None,
+        }
+        logger.info(f"Job {job_id[:8]} complete — {num_q} {endpoint} item(s) generated")
+
+    except Exception as e:
+        STATS["errors"] += 1
+        logger.error(f"Job {job_id[:8]} failed: {e}")
+        JOB_STORE[job_id] = {"status": "failed", "result": None, "error": str(e)}
+
+
+@app.get("/api/v1/job/{job_id}")
+async def poll_job(job_id: str):
+    """
+    Poll the status of an async generation job.
+    Returns:
+      {"status": "pending"}                              — not started yet
+      {"status": "processing"}                           — GPU is generating
+      {"status": "complete", "result": {...}}            — done, result included
+      {"status": "failed",   "error": "..."}            — generation failed
+    """
+    if job_id not in JOB_STORE:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found or expired")
+    return JOB_STORE[job_id]
+
 # ============================================================================
 # STARTUP + INFO ENDPOINTS
 # ============================================================================
@@ -2784,7 +2933,7 @@ async def startup():
 async def root():
     return {
         "service": "Qwen API - Production Hardened",
-        "version": "8.0.0",
+        "version": "9.0.0",
         "v8_changes": [
             "FEAT: All endpoints now support num_questions (int, default=1) for bulk generation",
             "FEAT: All endpoints return list-based batch responses (questions/coding_problems/sql_problems/aiml_problems)",
@@ -2837,40 +2986,30 @@ async def get_stats():
 @app.post("/api/v1/generate-topics")
 async def generate_topics(request: TopicGenerationRequest):
     """
-    Topics are generated in a SINGLE model call.
-    num_questions controls how many topics the LLM produces in one shot —
-    this gives natural topic variety spread across the provided skills,
-    unlike a loop which would produce near-duplicate results.
+    Topics: single model call with num_topics = num_questions.
+    Returns job_id immediately — client polls /api/v1/job/{job_id}.
     """
     update_stats("topics")
-    start_time = time.time()
     data = request.model_dump()
-
-    # Use num_questions to drive how many topics the model generates in one call
     num_q = max(1, request.num_questions)
+    # Topics use a single call — pass num_topics directly; loop runs once
     item_data = {**data, "num_topics": num_q}
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
 
+    # Check cache before launching background task
     cache_key = generate_cache_key("topics", item_data)
-
     if request.use_cache:
         cached = get_from_cache(cache_key)
         if cached:
             cached["cache_hit"] = True
-            return cached
+            JOB_STORE[job_id] = {"status": "complete", "result": cached, "error": None}
+            return {"job_id": job_id, "status": "complete"}
 
-    try:
-        result = await add_to_batch_and_wait("topics", item_data, cache_key, build_topics_prompt, 3000)
-        # Measure real wall-clock time including queue wait
-        total_time = round(time.time() - start_time, 3)
-        result["generation_time_seconds"] = total_time
-        result["batch_size"] = num_q
-        result["batched"] = True
-        result["cache_hit"] = False
-        save_to_cache(cache_key, result)
-        return result
-    except Exception as e:
-        STATS["errors"] += 1
-        raise HTTPException(status_code=500, detail=str(e))
+    asyncio.create_task(_run_generation_task(
+        job_id, "topics", item_data, build_topics_prompt, 3000, 1, request.use_cache
+    ))
+    return {"job_id": job_id, "status": "pending"}
 
 
 @app.post("/api/v1/generate-mcq")
@@ -2878,37 +3017,46 @@ async def generate_mcq(request: MCQGenerationRequest):
     update_stats("mcq")
     data = request.model_dump()
     num_q = max(1, request.num_questions)
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
 
-    all_questions = []
-    any_cache_hit = False
-    total_time = 0.0
+    async def _mcq_task():
+        JOB_STORE[job_id]["status"] = "processing"
+        try:
+            all_questions = []
+            any_cache_hit = False
+            total_time = 0.0
+            for i in range(num_q):
+                item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
+                if not item_data.get("request_id"):
+                    item_data["request_id"] = str(uuid.uuid4())
+                cache_key = generate_cache_key("mcq", {**item_data, "question_index": i})
+                if request.use_cache and cache_key in RESPONSE_CACHE:
+                    cached = dict(RESPONSE_CACHE[cache_key])
+                    cached["cache_hit"] = True
+                    any_cache_hit = True
+                    all_questions.append(cached)
+                    continue
+                result = await enqueue_and_wait(item_data, cache_key)
+                total_time += result.get("generation_time_seconds", 0)
+                all_questions.append(result)
+            JOB_STORE[job_id] = {
+                "status": "complete",
+                "result": {
+                    "questions": all_questions,
+                    "generation_time_seconds": round(total_time, 3),
+                    "cache_hit": any_cache_hit,
+                    "batched": True,
+                    "batch_size": num_q,
+                },
+                "error": None,
+            }
+        except Exception as e:
+            STATS["errors"] += 1
+            JOB_STORE[job_id] = {"status": "failed", "result": None, "error": str(e)}
 
-    for i in range(num_q):
-        item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
-        if not item_data.get("request_id"):
-            item_data["request_id"] = str(uuid.uuid4())
-
-        # Per-item cache key includes question index to prevent identical cached results
-        cache_key = generate_cache_key("mcq", {**item_data, "question_index": i})
-
-        if request.use_cache and cache_key in RESPONSE_CACHE:
-            cached = dict(RESPONSE_CACHE[cache_key])
-            cached["cache_hit"] = True
-            any_cache_hit = True
-            all_questions.append(cached)
-            continue
-
-        result = await enqueue_and_wait(item_data, cache_key)
-        total_time += result.get("generation_time_seconds", 0)
-        all_questions.append(result)
-
-    return MCQBatchResponse(
-        questions=all_questions,
-        generation_time_seconds=round(total_time, 3),
-        cache_hit=any_cache_hit,
-        batched=True,
-        batch_size=num_q,
-    )
+    asyncio.create_task(_mcq_task())
+    return {"job_id": job_id, "status": "pending"}
 
 
 @app.post("/api/v1/generate-subjective")
@@ -2916,38 +3064,12 @@ async def generate_subjective(request: SubjectiveGenerationRequest):
     update_stats("subjective")
     data = request.model_dump()
     num_q = max(1, request.num_questions)
-
-    all_questions = []
-    any_cache_hit = False
-    total_time = 0.0
-
-    for i in range(num_q):
-        item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
-        cache_key = generate_cache_key("subjective", {**item_data, "question_index": i})
-
-        if request.use_cache:
-            cached = get_from_cache(cache_key)
-            if cached:
-                any_cache_hit = True
-                all_questions.append(cached)
-                continue
-
-        try:
-            result = await add_to_batch_and_wait("subjective", item_data, cache_key, build_subjective_prompt, 2000)
-            save_to_cache(cache_key, result)
-            total_time += result.get("generation_time_seconds", 0)
-            all_questions.append(result)
-        except Exception as e:
-            STATS["errors"] += 1
-            raise HTTPException(status_code=500, detail=str(e))
-
-    return SubjectiveBatchResponse(
-        questions=all_questions,
-        generation_time_seconds=round(total_time, 3),
-        cache_hit=any_cache_hit,
-        batched=True,
-        batch_size=num_q,
-    )
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
+    asyncio.create_task(_run_generation_task(
+        job_id, "subjective", data, build_subjective_prompt, 2000, num_q, request.use_cache
+    ))
+    return {"job_id": job_id, "status": "pending"}
 
 
 @app.post("/api/v1/generate-coding")
@@ -2955,38 +3077,12 @@ async def generate_coding(request: CodingGenerationRequest):
     update_stats("coding")
     data = request.model_dump()
     num_q = max(1, request.num_questions)
-
-    all_problems = []
-    any_cache_hit = False
-    total_time = 0.0
-
-    for i in range(num_q):
-        item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
-        cache_key = generate_cache_key("coding", {**item_data, "question_index": i})
-
-        if request.use_cache:
-            cached = get_from_cache(cache_key)
-            if cached:
-                any_cache_hit = True
-                all_problems.append(cached)
-                continue
-
-        try:
-            result = await add_to_batch_and_wait("coding", item_data, cache_key, build_coding_prompt, 4000)
-            save_to_cache(cache_key, result)
-            total_time += result.get("generation_time_seconds", 0)
-            all_problems.append(result)
-        except Exception as e:
-            STATS["errors"] += 1
-            raise HTTPException(status_code=500, detail=str(e))
-
-    return CodingBatchResponse(
-        coding_problems=all_problems,
-        generation_time_seconds=round(total_time, 3),
-        cache_hit=any_cache_hit,
-        batched=True,
-        batch_size=num_q,
-    )
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
+    asyncio.create_task(_run_generation_task(
+        job_id, "coding", data, build_coding_prompt, 4000, num_q, request.use_cache
+    ))
+    return {"job_id": job_id, "status": "pending"}
 
 
 @app.post("/api/v1/generate-sql")
@@ -2994,38 +3090,12 @@ async def generate_sql(request: SQLGenerationRequest):
     update_stats("sql")
     data = request.model_dump()
     num_q = max(1, request.num_questions)
-
-    all_problems = []
-    any_cache_hit = False
-    total_time = 0.0
-
-    for i in range(num_q):
-        item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
-        cache_key = generate_cache_key("sql", {**item_data, "question_index": i})
-
-        if request.use_cache:
-            cached = get_from_cache(cache_key)
-            if cached:
-                any_cache_hit = True
-                all_problems.append(cached)
-                continue
-
-        try:
-            result = await add_to_batch_and_wait("sql", item_data, cache_key, build_sql_prompt, 3500)
-            save_to_cache(cache_key, result)
-            total_time += result.get("generation_time_seconds", 0)
-            all_problems.append(result)
-        except Exception as e:
-            STATS["errors"] += 1
-            raise HTTPException(status_code=500, detail=str(e))
-
-    return SQLBatchResponse(
-        sql_problems=all_problems,
-        generation_time_seconds=round(total_time, 3),
-        cache_hit=any_cache_hit,
-        batched=True,
-        batch_size=num_q,
-    )
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
+    asyncio.create_task(_run_generation_task(
+        job_id, "sql", data, build_sql_prompt, 3500, num_q, request.use_cache
+    ))
+    return {"job_id": job_id, "status": "pending"}
 
 
 @app.post("/api/v1/generate-aiml")
@@ -3033,42 +3103,46 @@ async def generate_aiml(request: AIMLGenerationRequest):
     update_stats("aiml")
     data = request.model_dump()
     num_q = max(1, request.num_questions)
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
 
-    all_problems = []
-    any_cache_hit = False
-    total_time = 0.0
-
-    for i in range(num_q):
-        item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
-        cache_key = generate_cache_key("aiml", {**item_data, "question_index": i})
-
-        if request.use_cache:
-            cached = get_from_cache(cache_key)
-            if cached:
-                any_cache_hit = True
-                all_problems.append(cached)
-                continue
-
+    async def _aiml_task():
+        JOB_STORE[job_id]["status"] = "processing"
         try:
-            token_limit = calculate_aiml_token_limit(item_data)
-            result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
-            save_to_cache(cache_key, result)
-            total_time += result.get("generation_time_seconds", 0)
-            all_problems.append(result)
-        except ValueError as e:
-            STATS["errors"] += 1
-            raise HTTPException(status_code=422, detail=f"AIML validation failed: {str(e)}")
+            all_problems = []
+            any_cache_hit = False
+            total_time = 0.0
+            for i in range(num_q):
+                item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
+                cache_key = generate_cache_key("aiml", {**item_data, "question_index": i})
+                if request.use_cache:
+                    cached = get_from_cache(cache_key)
+                    if cached:
+                        any_cache_hit = True
+                        all_problems.append(cached)
+                        continue
+                token_limit = calculate_aiml_token_limit(item_data)
+                result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
+                save_to_cache(cache_key, result)
+                total_time += result.get("generation_time_seconds", 0)
+                all_problems.append(result)
+            JOB_STORE[job_id] = {
+                "status": "complete",
+                "result": {
+                    "aiml_problems": all_problems,
+                    "generation_time_seconds": round(total_time, 3),
+                    "cache_hit": any_cache_hit,
+                    "batched": True,
+                    "batch_size": num_q,
+                },
+                "error": None,
+            }
         except Exception as e:
             STATS["errors"] += 1
-            raise HTTPException(status_code=500, detail=str(e))
+            JOB_STORE[job_id] = {"status": "failed", "result": None, "error": str(e)}
 
-    return AIMLBatchResponse(
-        aiml_problems=all_problems,
-        generation_time_seconds=round(total_time, 3),
-        cache_hit=any_cache_hit,
-        batched=True,
-        batch_size=num_q,
-    )
+    asyncio.create_task(_aiml_task())
+    return {"job_id": job_id, "status": "pending"}
 
 
 @app.post("/api/v1/clear-cache")
