@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pdf
+*.lock
+installed.txt
+reference file.txt
+frontend_tester.py
+qwen_model_server_script.py
+frontend_app.py

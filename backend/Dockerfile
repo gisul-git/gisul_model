@@ -23,11 +23,11 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy new script only
-COPY qwen_model_server_script.py /app/qwen_model_server_script.py
+# Copy script
+COPY qwen_model_server_script_multiple.py /app/qwen_model_server_script_multiple.py
 
 # Expose API port
 EXPOSE 9000
 
-# Start FastAPI server with new script
-CMD ["uvicorn", "qwen_model_server_script:app", "--host", "0.0.0.0", "--port", "9000"]
+# Start FastAPI server
+CMD ["uvicorn", "qwen_model_server_script_multiple:app", "--host", "0.0.0.0", "--port", "9000"]
