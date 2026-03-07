@@ -1094,22 +1094,7 @@ MCQ TO VALIDATE:
 #         ever triggering a proper retry.
 # ============================================================================
 
-def _sync_verify(text_input):
-    """Pure sync GPU call for MCQ verifier — runs in thread pool."""
-    inputs = TOKENIZER(text_input, return_tensors="pt").to(MODEL.device)
-    return MODEL.generate(
-        **inputs,
-        max_new_tokens=800,
-        temperature=0.2,
-        do_sample=True,
-        top_p=0.9,
-        pad_token_id=TOKENIZER.eos_token_id
-    )
-
-
-async def verify_mcq_with_llm(mcq: dict) -> dict:
-    """Async MCQ verifier — GPU call runs in executor, event loop stays free."""
-    loop = asyncio.get_event_loop()
+def verify_mcq_with_llm(mcq: dict) -> dict:
     for attempt in range(2):
         try:
             messages = [
@@ -1117,7 +1102,15 @@ async def verify_mcq_with_llm(mcq: dict) -> dict:
                 {"role": "user", "content": build_mcq_verifier_prompt(mcq)}
             ]
             text = TOKENIZER.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            output = await loop.run_in_executor(None, _sync_verify, text)
+            inputs = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
+            output = MODEL.generate(
+                **inputs,
+                max_new_tokens=800,
+                temperature=0.2,
+                do_sample=True,
+                top_p=0.9,
+                pad_token_id=TOKENIZER.eos_token_id
+            )
             decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
             decoded = decoded.split("assistant")[-1].strip()
             verified = extract_json(decoded)
@@ -1616,26 +1609,7 @@ def _safe_literal_eval(s: str) -> bool:
 # BATCH GENERATION
 # ============================================================================
 
-def _sync_generate_mcq(inputs):
-    """Pure sync GPU call for MCQ — runs in thread pool so event loop stays free."""
-    return MODEL.generate(
-        **inputs,
-        max_new_tokens=1000,
-        temperature=0.7,
-        top_p=0.9,
-        repetition_penalty=1.1,
-        do_sample=True,
-        pad_token_id=TOKENIZER.eos_token_id
-    )
-
-
-async def generate_batch(prompts: List[str]):
-    """
-    Async wrapper around MODEL.generate() for MCQ pipeline.
-    Runs blocking GPU call in thread pool executor — event loop stays free.
-    """
-    loop = asyncio.get_event_loop()
-
+def generate_batch(prompts: List[str]):
     messages = []
     for p in prompts:
         messages.append([
@@ -1658,7 +1632,15 @@ async def generate_batch(prompts: List[str]):
     inputs = TOKENIZER(texts, return_tensors="pt", padding=True, truncation=True).to(MODEL.device)
 
     start = time.time()
-    outputs = await loop.run_in_executor(None, _sync_generate_mcq, inputs)
+    outputs = MODEL.generate(
+        **inputs,
+        max_new_tokens=1000,
+        temperature=0.7,
+        top_p=0.9,
+        repetition_penalty=1.1,
+        do_sample=True,
+        pad_token_id=TOKENIZER.eos_token_id
+    )
     duration = time.time() - start
 
     responses = [
@@ -2022,7 +2004,7 @@ def build_deterministic_mcq(context: dict) -> dict:
 # No LLM verifier needed: the Python interpreter IS the verifier.
 # ============================================================================
 
-async def _run_deterministic_mcq_pipeline(raw_text: str) -> dict:
+def _run_deterministic_mcq_pipeline(raw_text: str) -> dict:
     """
     Deterministic-first pipeline for executable/output-prediction MCQs.
 
@@ -2078,7 +2060,7 @@ async def _run_deterministic_mcq_pipeline(raw_text: str) -> dict:
 #   full MCQ JSON (has "options" + "isCorrect")     → existing LLM pipeline
 # ============================================================================
 
-async def _run_mcq_pipeline(raw_text: str) -> dict:
+def _run_mcq_pipeline(raw_text: str) -> dict:
     """
     Unified entry point. Routes to one of two sub-pipelines based on JSON shape:
 
@@ -2104,7 +2086,7 @@ async def _run_mcq_pipeline(raw_text: str) -> dict:
     logger.info("Routing to conceptual MCQ pipeline (framework/theory topic)")
 
     # Step 1: LLM verification
-    verified_mcq = await verify_mcq_with_llm(raw_mcq)
+    verified_mcq = verify_mcq_with_llm(raw_mcq)
 
     # Step 2: Ambiguity check — reject vague opinion-based questions
     is_ambiguous, ambiguity_reason = detect_ambiguity(verified_mcq)
@@ -2196,7 +2178,7 @@ async def process_mcq_batch():
         keys.append(cache_key)
         ids.append(req_id)
 
-    responses, per_req_time = await generate_batch(prompts)
+    responses, per_req_time = generate_batch(prompts)
 
     STATS["batches_processed"] += 1
     STATS["total_batched_requests"] += len(batch)
@@ -2208,7 +2190,7 @@ async def process_mcq_batch():
 
         # Primary attempt: full pipeline (deterministic or conceptual, auto-routed)
         try:
-            final_mcq = await _run_mcq_pipeline(text)
+            final_mcq = _run_mcq_pipeline(text)
         except Exception as e:
             primary_error = e
             logger.warning(
@@ -2234,12 +2216,12 @@ async def process_mcq_batch():
 
         try:
             retry_prompt = build_mcq_prompt(batch[i][1])
-            retry_texts, _ = await generate_batch([retry_prompt])
+            retry_texts, _ = generate_batch([retry_prompt])
 
             if not retry_texts or not retry_texts[0].strip():
                 raise RuntimeError("Retry generation returned empty response")
 
-            final_mcq = await _run_mcq_pipeline(retry_texts[0])
+            final_mcq = _run_mcq_pipeline(retry_texts[0])
 
             final_mcq.update({
                 "generation_time_seconds": per_req_time,
@@ -2299,26 +2281,7 @@ async def enqueue_and_wait(data: dict, cache_key: str):
 # GENERIC BATCHING
 # ============================================================================
 
-def _sync_generate(inputs, max_tokens):
-    """Pure sync GPU call — runs in thread pool so event loop stays free."""
-    return MODEL.generate(
-        **inputs,
-        max_new_tokens=max_tokens,
-        temperature=0.7,
-        do_sample=True,
-        top_p=0.9,
-        pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
-    )
-
-
-async def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
-    """
-    Async wrapper around MODEL.generate().
-    Runs the blocking GPU call in a thread pool executor so the FastAPI
-    event loop stays free during generation (fixes timeout on concurrent requests).
-    """
-    loop = asyncio.get_event_loop()
-
+def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
     batch_messages = []
     for prompt in prompts:
         messages = [
@@ -2332,15 +2295,28 @@ async def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
     start_time = time.time()
 
     try:
-        # Run blocking MODEL.generate() in thread pool — frees event loop
-        outputs = await loop.run_in_executor(None, _sync_generate, inputs, max_tokens)
+        outputs = MODEL.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            temperature=0.7,
+            do_sample=True,
+            top_p=0.9,
+            pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
+        )
     except torch.cuda.OutOfMemoryError:
         logger.warning(f"CUDA OOM on batch of {len(prompts)} — clearing cache and retrying as batch_size=1")
         torch.cuda.empty_cache()
         if len(prompts) == 1:
             raise
         single_input = TOKENIZER([batch_messages[0]], return_tensors="pt", padding=True, truncation=True).to(MODEL.device)
-        outputs = await loop.run_in_executor(None, _sync_generate, single_input, max_tokens)
+        outputs = MODEL.generate(
+            **single_input,
+            max_new_tokens=max_tokens,
+            temperature=0.7,
+            do_sample=True,
+            top_p=0.9,
+            pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
+        )
         prompts = prompts[:1]
         logger.info("OOM recovery: processed 1 of original batch")
 
@@ -2381,7 +2357,7 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
         cache_keys.append(cache_key)
 
     try:
-        responses, total_time, per_request_time = await generate_batch_with_qwen(prompts, max_tokens)
+        responses, total_time, per_request_time = generate_batch_with_qwen(prompts, max_tokens)
 
         STATS["batches_processed"] += 1
         STATS["total_batched_requests"] += batch_size
@@ -2398,7 +2374,7 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
                 logger.error(f"Error processing batch item {i}: {e}. Retrying...")
                 try:
                     retry_prompt = prompt_builder_func(batch[i][1])
-                    retry_responses, _, _ = await generate_batch_with_qwen([retry_prompt], max_tokens)
+                    retry_responses, _, _ = generate_batch_with_qwen([retry_prompt], max_tokens)
                     retry_result = extract_json(retry_responses[0])
                     retry_result.update({"generation_time_seconds": per_request_time, "batched": True,
                                          "batch_size": batch_size, "cache_hit": False})
