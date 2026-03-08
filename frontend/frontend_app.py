@@ -338,7 +338,8 @@ def render_aiml_problem(p: dict, index: int):
             if dataset.get("features"):
                 st.write(f"**Features:** {', '.join(f'`{f}`' for f in dataset['features'])}")
             if dataset.get("feature_types"):
-                with st.expander("Feature Types"): st.json(dataset["feature_types"])
+                st.write("**Feature Types:**")
+                st.json(dataset["feature_types"])
             data_rows = dataset.get("data", [])
             if data_rows:
                 with st.expander(f"Sample Data ({len(data_rows)} rows)"):
