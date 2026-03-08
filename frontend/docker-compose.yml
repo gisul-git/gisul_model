@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  qwen-frontend:
+    build: .
+    image: qwen-frontend
+    container_name: qwen-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE=http://host.docker.internal:9000/api/v1
+    restart: unless-stopped

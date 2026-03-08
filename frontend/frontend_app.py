@@ -19,6 +19,12 @@ if "last_response" not in st.session_state:
     st.session_state.last_response = None
 if "last_health_check" not in st.session_state:
     st.session_state.last_health_check = 0
+if "pending_job_id" not in st.session_state:
+    st.session_state.pending_job_id = None
+if "pending_poll_url" not in st.session_state:
+    st.session_state.pending_poll_url = None
+if "job_start_ts" not in st.session_state:
+    st.session_state.job_start_ts = None
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -374,8 +380,7 @@ if st.button("🚀 Generate", type="primary", use_container_width=True):
         st.json(payload)
 
     try:
-        with st.spinner("⏳ Generating… this may take 30–120s on local GPU"):
-            resp = requests.post(url, json=payload, timeout=None)
+        resp = requests.post(url, json=payload, timeout=30)
 
         if resp.status_code != 200:
             st.error(f"❌ Server returned HTTP {resp.status_code}")
@@ -396,19 +401,57 @@ if st.button("🚀 Generate", type="primary", use_container_width=True):
 
         data = resp.json()
 
-        # Handle both response shapes:
-        # Shape A (direct):  {"topics": [...], "generation_time_seconds": ...}
-        # Shape B (job):     {"job_id": "...", "status": "complete", "result": {...}}
-        if "result" in data:
-            data = data["result"]
-
-        st.session_state.last_response = data
-        st.rerun()
+        # Job-based response — store job_id and start polling
+        if "job_id" in data:
+            st.session_state.pending_job_id = data["job_id"]
+            st.session_state.pending_poll_url = f"{API_BASE}/job/{data['job_id']}"
+            st.session_state.job_start_ts = time.time()
+            st.session_state.last_response = None
+            st.rerun()
+        else:
+            # Direct response (no job queue)
+            st.session_state.last_response = data
+            st.session_state.pending_job_id = None
+            st.rerun()
 
     except requests.exceptions.ConnectionError:
         st.error(f"❌ Cannot connect to server at `{_SERVER_BASE}`. Is it running?")
     except Exception as e:
         st.error(f"Unexpected error: {e}")
+
+# ─────────────────────────────────────────────
+# JOB POLLING
+# ─────────────────────────────────────────────
+if st.session_state.pending_job_id:
+    elapsed = int(time.time() - (st.session_state.job_start_ts or time.time()))
+    st.info(f"⏳ Generating… {elapsed}s elapsed. Checking job status…")
+
+    try:
+        poll_resp = requests.get(st.session_state.pending_poll_url, timeout=10)
+        poll_data = poll_resp.json()
+
+        if poll_data.get("status") == "complete":
+            result = poll_data.get("result") or poll_data
+            st.session_state.last_response = result
+            st.session_state.pending_job_id = None
+            st.session_state.pending_poll_url = None
+            st.session_state.job_start_ts = None
+            st.rerun()
+
+        elif poll_data.get("status") == "error":
+            st.error(f"❌ Generation failed: {poll_data.get('error', 'Unknown error')}")
+            st.session_state.pending_job_id = None
+            st.session_state.pending_poll_url = None
+            st.session_state.job_start_ts = None
+
+        else:
+            # Still pending/processing — wait 3s then rerun
+            time.sleep(3)
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"Polling error: {e}")
+        st.session_state.pending_job_id = None
 
 
 # ─────────────────────────────────────────────
