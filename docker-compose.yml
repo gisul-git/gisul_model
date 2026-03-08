@@ -22,7 +22,7 @@ services:
     ports:
       - '8501:8501'
     environment:
-      - API_BASE=http://172.17.0.1:9000/api/v1
+      - API_BASE=http://qwen-model:9000/api/v1
     restart: unless-stopped
 
   watchtower:
