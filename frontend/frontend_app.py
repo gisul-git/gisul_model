@@ -342,13 +342,13 @@ def render_aiml_problem(p: dict, index: int):
                 st.json(dataset["feature_types"])
             data_rows = dataset.get("data", [])
             if data_rows:
-                with st.expander(f"Sample Data ({len(data_rows)} rows)"):
-                    try:
-                        df = pd.DataFrame(data_rows)
-                        st.dataframe(df.head(20), use_container_width=True)
-                        if len(data_rows) > 20:
-                            st.caption(f"Showing first 20 of {len(data_rows)} rows.")
-                    except: st.json(data_rows[:5])
+                st.write(f"**Sample Data ({len(data_rows)} rows)**")
+                try:
+                    df = pd.DataFrame(data_rows)
+                    st.dataframe(df.head(20), use_container_width=True)
+                    if len(data_rows) > 20:
+                        st.caption(f"Showing first 20 of {len(data_rows)} rows.")
+                except: st.json(data_rows[:5])
     if p.get("expectedApproach"):
         with st.expander("🧪 Expected Approach"): st.write(p["expectedApproach"])
     if p.get("evaluationCriteria"):
@@ -428,7 +428,7 @@ if st.session_state.pending_job_id:
     st.info(f"⏳ Generating… {elapsed}s elapsed. Checking job status…")
 
     try:
-        poll_resp = requests.get(st.session_state.pending_poll_url, timeout=60)
+        poll_resp = requests.get(st.session_state.pending_poll_url, timeout=10)
         poll_data = poll_resp.json()
 
         if poll_data.get("status") == "complete":
@@ -450,16 +450,9 @@ if st.session_state.pending_job_id:
             time.sleep(3)
             st.rerun()
 
-    except requests.exceptions.Timeout:
-        # Timeout just means server is still busy — keep polling, don't clear job
-        st.info("⏳ Server is still generating, please wait…")
-        time.sleep(3)
-        st.rerun()
-
     except Exception as e:
-        st.warning(f"Polling hiccup, retrying… ({e})")
-        time.sleep(3)
-        st.rerun()
+        st.error(f"Polling error: {e}")
+        st.session_state.pending_job_id = None
 
 
 # ─────────────────────────────────────────────
