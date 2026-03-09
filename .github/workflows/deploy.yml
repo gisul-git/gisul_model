@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: Deploy to Office Laptop
 
 on:
   push:
@@ -7,8 +7,7 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: self-hosted
-
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -32,3 +31,23 @@ jobs:
           context: ./frontend
           push: true
           tags: gisul/qwen-frontend:latest
+
+  deploy:
+    runs-on: self-hosted
+    needs: build-and-push
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Pull latest images
+        run: |
+          docker pull gisul/qwen-api:latest
+          docker pull gisul/qwen-frontend:latest
+
+      - name: Restart containers
+        run: |
+          docker-compose -f ${{ github.workspace }}/docker-compose.yml down
+          docker-compose -f ${{ github.workspace }}/docker-compose.yml up -d
+
+      - name: Verify containers running
+        run: docker ps
