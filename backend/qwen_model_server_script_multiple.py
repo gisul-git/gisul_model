@@ -1105,7 +1105,7 @@ def verify_mcq_with_llm(mcq: dict) -> dict:
             inputs = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
             output = MODEL.generate(
                 **inputs,
-                max_new_tokens=800,
+                max_new_tokens=2000,
                 temperature=0.2,
                 do_sample=True,
                 top_p=0.9,
