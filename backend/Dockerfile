@@ -6,12 +6,14 @@ WORKDIR /app
 ENV CUDA_HOME=/usr/local/cuda
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ENV BNB_CUDA_VERSION=121
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Python
-RUN apt-get update && apt-get install -y \
+RUN apt-get update --fix-missing && apt-get install -y \
     python3 \
     python3-pip \
     git \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
