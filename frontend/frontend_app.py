@@ -338,16 +338,17 @@ def render_aiml_problem(p: dict, index: int):
             if dataset.get("features"):
                 st.write(f"**Features:** {', '.join(f'`{f}`' for f in dataset['features'])}")
             if dataset.get("feature_types"):
-                with st.expander("Feature Types"): st.json(dataset["feature_types"])
+                st.write("**Feature Types:**")
+                st.json(dataset["feature_types"])
             data_rows = dataset.get("data", [])
             if data_rows:
-                with st.expander(f"Sample Data ({len(data_rows)} rows)"):
-                    try:
-                        df = pd.DataFrame(data_rows)
-                        st.dataframe(df.head(20), use_container_width=True)
-                        if len(data_rows) > 20:
-                            st.caption(f"Showing first 20 of {len(data_rows)} rows.")
-                    except: st.json(data_rows[:5])
+                st.write(f"**Sample Data ({len(data_rows)} rows):**")
+                try:
+                    df = pd.DataFrame(data_rows)
+                    st.dataframe(df.head(20), use_container_width=True)
+                    if len(data_rows) > 20:
+                        st.caption(f"Showing first 20 of {len(data_rows)} rows.")
+                except: st.json(data_rows[:5])
     if p.get("expectedApproach"):
         with st.expander("🧪 Expected Approach"): st.write(p["expectedApproach"])
     if p.get("evaluationCriteria"):
@@ -449,9 +450,15 @@ if st.session_state.pending_job_id:
             time.sleep(3)
             st.rerun()
 
+    except requests.exceptions.Timeout:
+        st.info("⏳ Server is still generating, please wait…")
+        time.sleep(3)
+        st.rerun()
+
     except Exception as e:
-        st.error(f"Polling error: {e}")
-        st.session_state.pending_job_id = None
+        st.warning(f"Polling hiccup, retrying… ({e})")
+        time.sleep(3)
+        st.rerun()
 
 
 # ─────────────────────────────────────────────
