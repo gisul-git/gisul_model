@@ -25,10 +25,4 @@ services:
       - API_BASE=http://qwen-model:9000/api/v1
     restart: unless-stopped
 
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 300
-    restart: unless-stopped
+ 
