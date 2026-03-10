@@ -59,6 +59,11 @@ with st.sidebar:
                 with col_b:
                     mem = h.get("memory_gb", 0)
                     st.metric("GPU Memory", f"{round(mem, 2)} GB" if mem and mem > 0 else "N/A")
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    st.metric("Active Jobs", h.get("active_jobs", 0))
+                with col_d:
+                    st.metric("Jobs in Store", h.get("total_jobs_in_store", 0))
                 qs = h.get("queue_sizes", {})
                 stuck = {k: v for k, v in qs.items() if v > 0}
                 if stuck:
