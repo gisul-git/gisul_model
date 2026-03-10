@@ -8,12 +8,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - uses: docker/build-push-action@v5
         with:
           context: ./frontend
@@ -23,11 +26,11 @@ jobs:
   deploy:
     needs: build
     runs-on: self-hosted
+
     steps:
-      - uses: actions/checkout@v3
-      - name: Restart containers
+      - uses: actions/checkout@v4
+
+      - name: Deploy containers
         run: |
-          docker stop qwen-model qwen-frontend || true
-          docker rm qwen-model qwen-frontend || true
-          docker-compose -f ${{ github.workspace }}/docker-compose.yml pull
-          docker-compose -f ${{ github.workspace }}/docker-compose.yml up -d
+          docker compose pull
+          docker compose up -d --remove-orphans
