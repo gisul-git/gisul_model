@@ -411,9 +411,11 @@ def extract_json(text: str) -> dict:
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text)
     text = text.strip()
-    # Remove control characters that break JSON parsing (e.g. raw newlines inside strings)
-    # Replace them with a space so the value is still readable
+    # Remove control characters that break JSON parsing
     text = re.sub(r'(?<!\\)[\x00-\x08\x0b\x0c\x0e-\x1f]', ' ', text)
+    # Normalize raw newlines inside JSON string values to a space
+    # This fixes SQL queries that span multiple lines inside "expectedQuery"
+    text = re.sub(r'(?<!\\)\n', ' ', text)
 
     start = text.find('{')
     if start == -1:
@@ -1634,7 +1636,7 @@ def generate_batch(prompts: List[str]):
     start = time.time()
     outputs = MODEL.generate(
         **inputs,
-        max_new_tokens=1000,
+        max_new_tokens=2000,
         temperature=0.7,
         top_p=0.9,
         repetition_penalty=1.1,
@@ -2264,7 +2266,7 @@ async def enqueue_and_wait(data: dict, cache_key: str):
                 if req_id not in pending_results:
                     await process_mcq_batch()
 
-    for _ in range(300):
+    for _ in range(600):
         if req_id in pending_results:
             result = pending_results.pop(req_id)
             if isinstance(result, Exception):
@@ -2281,7 +2283,7 @@ async def enqueue_and_wait(data: dict, cache_key: str):
 # GENERIC BATCHING
 # ============================================================================
 
-def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
+def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000, temperature: float = 0.7):
     batch_messages = []
     for prompt in prompts:
         messages = [
@@ -2298,9 +2300,10 @@ def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
         outputs = MODEL.generate(
             **inputs,
             max_new_tokens=max_tokens,
-            temperature=0.7,
+            temperature=temperature,
             do_sample=True,
             top_p=0.9,
+            repetition_penalty=1.1,
             pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
         )
     except torch.cuda.OutOfMemoryError:
@@ -2312,9 +2315,10 @@ def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000):
         outputs = MODEL.generate(
             **single_input,
             max_new_tokens=max_tokens,
-            temperature=0.7,
+            temperature=temperature,
             do_sample=True,
             top_p=0.9,
+            repetition_penalty=1.1,
             pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
         )
         prompts = prompts[:1]
@@ -2339,8 +2343,21 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
     if len(queue) == 0:
         return
 
+    # AIML generates large datasets — runs alone to avoid OOM
+    effective_batch_size = 1 if endpoint == "aiml" else BATCH_SIZE_MAX
+
+    # Temperature per endpoint: lower = more deterministic/structured output
+    endpoint_temperature = {
+        "aiml":       0.6,   # structured dataset JSON — needs consistency
+        "coding":     0.6,   # structured problem JSON — needs consistency
+        "sql":        0.65,  # structured SQL + schema
+        "subjective": 0.7,   # some creativity needed
+        "topics":     0.8,   # variety in topic suggestions
+        "mcq":        0.7,   # default
+    }.get(endpoint, 0.7)
+
     batch = []
-    while len(batch) < BATCH_SIZE_MAX and len(queue) > 0:
+    while len(batch) < effective_batch_size and len(queue) > 0:
         batch.append(queue.popleft())
 
     if len(batch) == 0:
@@ -2357,7 +2374,7 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
         cache_keys.append(cache_key)
 
     try:
-        responses, total_time, per_request_time = generate_batch_with_qwen(prompts, max_tokens)
+        responses, total_time, per_request_time = generate_batch_with_qwen(prompts, max_tokens, endpoint_temperature)
 
         STATS["batches_processed"] += 1
         STATS["total_batched_requests"] += batch_size
@@ -2374,7 +2391,7 @@ async def process_batch(endpoint: str, prompt_builder_func, max_tokens: int = 20
                 logger.error(f"Error processing batch item {i}: {e}. Retrying...")
                 try:
                     retry_prompt = prompt_builder_func(batch[i][1])
-                    retry_responses, _, _ = generate_batch_with_qwen([retry_prompt], max_tokens)
+                    retry_responses, _, _ = generate_batch_with_qwen([retry_prompt], max_tokens, endpoint_temperature)
                     retry_result = extract_json(retry_responses[0])
                     retry_result.update({"generation_time_seconds": per_request_time, "batched": True,
                                          "batch_size": batch_size, "cache_hit": False})
@@ -2416,7 +2433,7 @@ async def add_to_batch_and_wait(endpoint, request_data, cache_key, prompt_builde
                 if request_id not in pending_results:
                     await process_batch(endpoint, prompt_builder_func, max_tokens)
 
-    for _ in range(300):
+    for _ in range(600):
         if request_id in pending_results:
             result = pending_results.pop(request_id)
             if result["success"]:
@@ -2437,8 +2454,16 @@ def build_topics_prompt(request_data):
 Skills: {', '.join(request_data['skills'])}
 Experience: {request_data['experience_min']}-{request_data['experience_max']} years
 
+RULES:
+- "label" must be a SHORT topic name only (2-6 words). NOT a sentence or question.
+  GOOD: "Python List Slicing", "SQL Window Functions", "React useEffect Hook"
+  BAD: "Understanding how Python handles list slicing operations"
+- Mix difficulty: ~30% Easy, ~50% Medium, ~20% Hard based on experience level.
+- questionType must match the topic — use AIML only for ML/data science topics.
+- canUseJudge0 is true only for Coding/SQL topics.
+
 Return ONLY JSON:
-{{"topics": [{{"label": "Topic", "questionType": "MCQ|Subjective|Coding|SQL|AIML|PseudoCode", "difficulty": "Easy|Medium|Hard", "canUseJudge0": true|false}}]}}"""
+{{"topics": [{{"label": "Short Topic Name", "questionType": "MCQ|Subjective|Coding|SQL|AIML|PseudoCode", "difficulty": "Easy|Medium|Hard", "canUseJudge0": true|false}}]}}"""
 
 
 def build_subjective_prompt(request_data):
@@ -2452,13 +2477,23 @@ STRICT RULES:
 - No markdown.
 - No extra explanation outside JSON.
 - All fields REQUIRED.
-- expectedAnswer must be detailed but single string.
+- expectedAnswer must be detailed, at least 3-4 sentences.
+- gradingCriteria: EXACTLY 4 specific, measurable criteria — NOT generic ones.
+  BAD: "Correctness", "Clarity", "Understanding"
+  GOOD: "Correctly explains the difference between X and Y with an example",
+        "Mentions at least 2 real-world use cases", "Addresses edge case Z",
+        "Uses accurate technical terminology"
 
 MANDATORY JSON FORMAT:
 {{
   "question": "Complete question text",
-  "expectedAnswer": "Detailed answer explanation",
-  "gradingCriteria": ["criterion 1", "criterion 2", "criterion 3"],
+  "expectedAnswer": "Detailed answer explanation covering all key points",
+  "gradingCriteria": [
+    "Specific criterion 1 tied to the answer content",
+    "Specific criterion 2 tied to the answer content",
+    "Specific criterion 3 tied to the answer content",
+    "Specific criterion 4 tied to the answer content"
+  ],
   "difficulty": "{request_data['difficulty']}",
   "bloomLevel": "Apply"
 }}
@@ -2672,42 +2707,65 @@ def build_aiml_prompt(request_data):
 
 Generate a {request_data['difficulty']} difficulty AI/ML problem about: {request_data['topic']}
 
-CRITICAL DATA LEAKAGE PREVENTION:
-The 'target' variable MUST NEVER appear in the 'features' list
-The 'target' variable MUST NEVER appear in data row keys
-Training data should ONLY contain feature columns (NO target column)
+DATASET DESIGN RULES — READ CAREFULLY:
+- Choose feature names that are SPECIFIC and REALISTIC for this exact topic.
+  Do NOT use generic placeholders like "feature1", "feature2".
+  Example — customer churn: monthly_bill, tenure_months, num_complaints, contract_type
+  Example — house prices: sqft_living, num_bedrooms, num_bathrooms, zip_code, year_built
+  Example — fraud detection: transaction_amount, merchant_category, hour_of_day, distance_from_home
+  Example — medical diagnosis: age, bmi, blood_pressure, cholesterol, smoker, glucose_level
+- Number of features: use as many as a REAL dataset for this topic would have (typically 6-15).
+- Number of data rows: generate as many as needed for a realistic ML exercise.
+  Do NOT stop at 5 or 10 rows. A proper dataset needs at LEAST 50 rows.
+  For binary classification: aim for 80-120 rows reflecting the class distribution.
+  For regression or multi-class: aim for 100-150 rows.
+- Values must be REALISTIC and VARIED — not round numbers, not identical patterns.
+  Use actual plausible ranges. Mix values across the full range. Add noise.
+  BAD: all monthly_bill values are 50, 60, 70, 80, 90
+  GOOD: 47.32, 83.15, 29.90, 112.44, 65.70, 91.22, 38.55...
+- Categorical values must exactly match the options defined in feature_types.
+- Class distribution in data rows must approximately match class_distribution field.
 
-WRONG:
-{{"features": ["age","fare","survived"], "target": "survived", "data": [{{"age":22,"fare":7.85,"survived":0}}]}}
+CRITICAL DATA LEAKAGE PREVENTION:
+- The 'target' variable MUST NEVER appear in the 'features' list
+- The 'target' variable MUST NEVER appear as a key in any data row
+- Data rows contain ONLY feature columns — no target column
+
+WRONG (target 'churn' leaks into data):
+{{"features": ["age","churn"], "target": "churn", "data": [{{"age":22,"churn":0}}]}}
 
 CORRECT:
-{{"features": ["age","fare"], "target": "survived", "data": [{{"age":22,"fare":7.85}}]}}
+{{"features": ["age"], "target": "churn", "data": [{{"age":22}}]}}
 
 MANDATORY JSON STRUCTURE:
 {{
-  "problemStatement": "Clear problem description",
+  "problemStatement": "Detailed real-world problem description for this specific topic",
   "dataset": {{
-    "description": "Dataset context",
-    "features": ["feature1", "feature2", "feature3"],
-    "feature_types": {{"feature1": "numerical (continuous)", "feature2": "categorical (values: A,B,C)"}},
+    "description": "What this dataset represents in a real business/research context",
+    "features": ["realistic_name_1", "realistic_name_2", "...all features for this topic"],
+    "feature_types": {{
+      "realistic_name_1": "numerical (continuous, range: X to Y)",
+      "realistic_name_2": "categorical (values: A, B, C)"
+    }},
     "target": "target_variable_name",
-    "target_type": "binary (0: class0, 1: class1)",
-    "class_distribution": {{"class0": 60, "class1": 40}},
-    "size": "100 samples",
-    "data": [{{"feature1": value1, "feature2": value2, "feature3": value3}}]
+    "target_type": "binary (0: label0, 1: label1) OR multiclass (classes: A,B,C) OR continuous",
+    "class_distribution": {{"class0": 70, "class1": 30}},
+    "size": "N samples",
+    "data": [
+      {{"feature1": realistic_varied_value, "feature2": realistic_varied_value, ...}},
+      ... MINIMUM 50 ROWS, aim for 80-120 rows, all with realistic varied values ...
+    ]
   }},
   "preprocessing_requirements": [
-    "Feature scaling: StandardScaler for numerical features",
-    "Categorical encoding: OneHotEncoder",
-    "Train-test split: 80-20",
-    "Random seed: 42"
+    "Specific preprocessing steps actually needed for this dataset"
   ],
-  "expectedApproach": "Recommended algorithms for {request_data['difficulty']} level.",
-  "evaluationCriteria": ["Accuracy", "Precision", "Recall", "F1 Score"],
+  "expectedApproach": "Specific ML algorithms and why they suit this problem and difficulty level.",
+  "evaluationCriteria": ["Metrics appropriate for this specific problem type"],
   "difficulty": "{request_data['difficulty']}"
 }}
 
-Generate the complete JSON now (100 data rows, NO target column in data):"""
+REMINDER: Generate AT LEAST 50 data rows with realistic, varied values. Do not stop early.
+Generate the complete JSON now:"""
 
 
 # ============================================================================
@@ -2747,23 +2805,22 @@ def validate_aiml_response(obj: dict) -> None:
     if expected_features != actual_features:
         missing = expected_features - actual_features
         extra = actual_features - expected_features
-        errors = []
-        if missing:
-            errors.append(f"Missing: {missing}")
-        if extra:
-            errors.append(f"Extra: {extra}")
-        raise ValueError("Feature mismatch: " + "; ".join(errors))
+        # Auto-fix: use actual data columns as ground truth instead of hard crashing.
+        # The model sometimes generates slightly different but valid column names.
+        logger.warning(
+            f"Feature mismatch — missing: {missing}, extra: {extra} — "
+            f"reconciling features list to match actual data columns"
+        )
+        dataset["features"] = list(actual_features)
+        features = dataset["features"]
 
     last_row = data_rows[-1]
     if not isinstance(last_row, dict) or len(last_row) == 0:
-        raise ValueError("Last data row is empty — likely truncated")
+        raise ValueError("Last data row is empty — likely truncated JSON")
     if len(last_row) < len(features):
         raise ValueError(f"Last row incomplete: {len(last_row)} fields, expected {len(features)}")
-    for key, value in last_row.items():
-        if value is None or value == "":
-            raise ValueError(f"Last row has empty value for '{key}'")
 
-    logger.info(f"AIML validation PASSED: {len(data_rows)} rows")
+    logger.info(f"AIML validation PASSED: {len(data_rows)} rows, {len(features)} features")
 
 
 def validate_and_fix_aiml_response(obj: dict) -> dict:
@@ -2788,11 +2845,10 @@ def validate_and_fix_aiml_response(obj: dict) -> dict:
 
 
 def calculate_aiml_token_limit(request_data: dict) -> int:
+    # Generous limits — AIML problems with 80-150 rows need significant tokens.
+    # Easy gets 10k, Medium 14k, Hard 16k. No artificial cap.
     difficulty = request_data.get('difficulty', 'medium').lower()
-    tokens_per_row = {'easy': 50, 'medium': 75, 'hard': 100}.get(difficulty, 75)
-    preprocessing = {'easy': 500, 'medium': 800, 'hard': 1200}.get(difficulty, 800)
-    total = int((2000 + 100 * tokens_per_row + preprocessing) * 1.2)
-    return min(total, 12000)
+    return {'easy': 10000, 'medium': 14000, 'hard': 16000}.get(difficulty, 14000)
 
 
 
@@ -2934,11 +2990,14 @@ async def root():
 
 @app.get("/health")
 async def health_check():
+    active_jobs = sum(1 for v in JOB_STORE.values() if v.get("status") in ("pending", "processing"))
     return {
         "status": "healthy",
         "model_loaded": MODEL is not None,
         "memory_gb": torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0,
-        "queue_sizes": {e: len(q) for e, q in batch_queues.items()}
+        "queue_sizes": {e: len(q) for e, q in batch_queues.items()},
+        "active_jobs": active_jobs,
+        "total_jobs_in_store": len(JOB_STORE)
     }
 
 
@@ -3043,7 +3102,7 @@ async def generate_subjective(request: SubjectiveGenerationRequest):
     job_id = str(uuid.uuid4())
     JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
     asyncio.create_task(_run_generation_task(
-        job_id, "subjective", data, build_subjective_prompt, 2000, num_q, request.use_cache
+        job_id, "subjective", data, build_subjective_prompt, 3000, num_q, request.use_cache
     ))
     return {"job_id": job_id, "status": "pending"}
 
@@ -3144,5 +3203,5 @@ async def clear_cache():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=9000)
 # v1.0.1

@@ -452,7 +452,7 @@ if st.session_state.pending_job_id:
             st.session_state.job_start_ts = None
             st.rerun()
 
-        elif poll_data.get("status") == "error":
+        elif poll_data.get("status") in ("failed", "error"):
             st.error(f"❌ Generation failed: {poll_data.get('error', 'Unknown error')}")
             st.session_state.pending_job_id = None
             st.session_state.pending_poll_url = None
