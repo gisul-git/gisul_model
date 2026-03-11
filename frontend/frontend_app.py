@@ -1,5 +1,5 @@
 import streamlit as st
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 import requests
 import pandas as pd
 import time
@@ -353,22 +353,16 @@ def render_aiml_problem(p: dict, index: int):
                     _labels = list(_cd.keys())
                     _values = list(_cd.values())
                     _colors = ["#4CAF50", "#F44336", "#2196F3", "#FF9800", "#9C27B0"]
-                    _fig = go.Figure(go.Pie(
-                        labels=_labels,
-                        values=_values,
-                        hole=0.4,
-                        marker=dict(colors=_colors[:len(_labels)]),
-                        textinfo="label+percent",
-                        hovertemplate="%{label}: %{value}<extra></extra>"
-                    ))
-                    _fig.update_layout(
-                        margin=dict(t=10, b=10, l=10, r=10),
-                        height=220,
-                        showlegend=False,
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="white")
+                    _fig, _ax = plt.subplots(figsize=(3, 3), facecolor="none")
+                    _ax.pie(
+                        _values, labels=_labels,
+                        colors=_colors[:len(_labels)],
+                        autopct="%1.0f%%", startangle=90,
+                        textprops={"color": "white", "fontsize": 11}
                     )
-                    st.plotly_chart(_fig, use_container_width=True)
+                    _ax.set_facecolor("none")
+                    st.pyplot(_fig, use_container_width=True)
+                    plt.close(_fig)
             if dataset.get("features"):
                 st.write(f"**Features ({len(dataset['features'])}):** {', '.join(f'`{f}`' for f in dataset['features'])}")
             if dataset.get("feature_types"):
