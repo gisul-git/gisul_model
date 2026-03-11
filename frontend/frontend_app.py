@@ -1,4 +1,5 @@
 import streamlit as st
+import plotly.graph_objects as go
 import requests
 import pandas as pd
 import time
@@ -329,9 +330,16 @@ def render_sql_problem(p: dict, index: int):
 def render_aiml_problem(p: dict, index: int):
     st.markdown(f"#### AI/ML Problem {index}")
     st.write(p.get("problemStatement", ""))
+
+    # Tasks section
+    if p.get("tasks"):
+        with st.expander("📋 Tasks", expanded=True):
+            for t in p["tasks"]:
+                st.write(f"• {t}")
+
     if p.get("dataset"):
         dataset = p["dataset"]
-        with st.expander("📊 Dataset Details"):
+        with st.expander("📊 Dataset Details", expanded=True):
             st.write(f"**Description:** {dataset.get('description', '')}")
             c1, c2 = st.columns(2)
             with c1:
@@ -341,26 +349,68 @@ def render_aiml_problem(p: dict, index: int):
             with c2:
                 if dataset.get("class_distribution"):
                     st.write("**Class Distribution:**")
-                    st.json(dataset["class_distribution"])
+                    _cd = dataset["class_distribution"]
+                    _labels = list(_cd.keys())
+                    _values = list(_cd.values())
+                    _colors = ["#4CAF50", "#F44336", "#2196F3", "#FF9800", "#9C27B0"]
+                    _fig = go.Figure(go.Pie(
+                        labels=_labels,
+                        values=_values,
+                        hole=0.4,
+                        marker=dict(colors=_colors[:len(_labels)]),
+                        textinfo="label+percent",
+                        hovertemplate="%{label}: %{value}<extra></extra>"
+                    ))
+                    _fig.update_layout(
+                        margin=dict(t=10, b=10, l=10, r=10),
+                        height=220,
+                        showlegend=False,
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="white")
+                    )
+                    st.plotly_chart(_fig, use_container_width=True)
             if dataset.get("features"):
-                st.write(f"**Features:** {', '.join(f'`{f}`' for f in dataset['features'])}")
+                st.write(f"**Features ({len(dataset['features'])}):** {', '.join(f'`{f}`' for f in dataset['features'])}")
             if dataset.get("feature_types"):
                 st.write("**Feature Types:**")
                 st.json(dataset["feature_types"])
             data_rows = dataset.get("data", [])
             if data_rows:
-                st.write(f"**Sample Data ({len(data_rows)} rows):**")
+                st.write(f"**Dataset ({len(data_rows)} rows):**")
                 try:
-                    df = pd.DataFrame(data_rows)
-                    st.dataframe(df.head(20), use_container_width=True)
-                    if len(data_rows) > 20:
-                        st.caption(f"Showing first 20 of {len(data_rows)} rows.")
-                except: st.json(data_rows[:5])
+                    df = pd.DataFrame(data_rows).astype(str)
+                    st.table(df)
+                except Exception:
+                    st.json(data_rows[:5])
+            else:
+                st.warning("No dataset rows generated.")
+
+    # Download button OUTSIDE the expander — avoids React re-render loop
+    data_rows = p.get("dataset", {}).get("data", [])
+    if data_rows:
+        try:
+            csv_data = pd.DataFrame(data_rows).to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download Dataset as CSV",
+                data=csv_data,
+                file_name=f"aiml_dataset_{index}.csv",
+                mime="text/csv",
+                key=f"csv_download_{index}"
+            )
+        except Exception:
+            pass
+
+    if p.get("preprocessing_requirements"):
+        with st.expander("⚙️ Preprocessing Requirements"):
+            for r in p["preprocessing_requirements"]:
+                st.write(f"• {r}")
     if p.get("expectedApproach"):
-        with st.expander("🧪 Expected Approach"): st.write(p["expectedApproach"])
+        with st.expander("🧪 Expected Approach"):
+            st.write(p["expectedApproach"])
     if p.get("evaluationCriteria"):
         with st.expander("📏 Evaluation Criteria"):
-            for c in p["evaluationCriteria"]: st.write(f"• {c}")
+            for c in p["evaluationCriteria"]:
+                st.write(f"• {c}")
     st.caption(f"Difficulty: `{p.get('difficulty', '—')}`")
 
 

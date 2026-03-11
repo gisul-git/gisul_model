@@ -101,6 +101,7 @@ import asyncio
 from collections import deque
 import uuid
 import random
+import numpy as np
 
 # ----------------------------------------------------------------------------
 # LOGGING
@@ -2703,69 +2704,207 @@ Generate now:"""
 
 
 def build_aiml_prompt(request_data):
+    """
+    Pass 1 prompt — model generates SCHEMA ONLY (no data rows).
+    Data rows are generated programmatically in Pass 2 by generate_aiml_dataset().
+    """
     return f"""You are an expert AI/ML assessment designer.
 
 Generate a {request_data['difficulty']} difficulty AI/ML problem about: {request_data['topic']}
 
-DATASET DESIGN RULES — READ CAREFULLY:
-- Choose feature names that are SPECIFIC and REALISTIC for this exact topic.
-  Do NOT use generic placeholders like "feature1", "feature2".
+RULES:
+- Choose feature names SPECIFIC and REALISTIC for this topic (6-12 features).
+  Do NOT use generic names like "feature1", "feature2".
   Example — customer churn: monthly_bill, tenure_months, num_complaints, contract_type
   Example — house prices: sqft_living, num_bedrooms, num_bathrooms, zip_code, year_built
   Example — fraud detection: transaction_amount, merchant_category, hour_of_day, distance_from_home
-  Example — medical diagnosis: age, bmi, blood_pressure, cholesterol, smoker, glucose_level
-- Number of features: use as many as a REAL dataset for this topic would have (typically 6-15).
-- Number of data rows: generate as many as needed for a realistic ML exercise.
-  Do NOT stop at 5 or 10 rows. A proper dataset needs at LEAST 50 rows.
-  For binary classification: aim for 80-120 rows reflecting the class distribution.
-  For regression or multi-class: aim for 100-150 rows.
-- Values must be REALISTIC and VARIED — not round numbers, not identical patterns.
-  Use actual plausible ranges. Mix values across the full range. Add noise.
-  BAD: all monthly_bill values are 50, 60, 70, 80, 90
-  GOOD: 47.32, 83.15, 29.90, 112.44, 65.70, 91.22, 38.55...
-- Categorical values must exactly match the options defined in feature_types.
-- Class distribution in data rows must approximately match class_distribution field.
+  Example — medical: age, bmi, blood_pressure, cholesterol, smoker, glucose_level
+- feature_types: for each feature specify EXACTLY one of these formats:
+    numerical (continuous, range: X to Y)    ← numbers only, NO units like GB/Mbps/months
+    numerical (integer, range: X to Y)       ← numbers only, NO units
+    categorical (values: A, B, C)            ← comma separated values
+  BAD: "numerical (continuous, range: 50 to 500 GB)"   ← never add units
+  GOOD: "numerical (continuous, range: 50 to 500)"     ← numbers only
+- target variable MUST NOT appear in features list.
+- Do NOT generate any data rows — dataset will be generated programmatically.
+- ALL fields below are REQUIRED. Do not leave any field empty or as a placeholder.
 
-CRITICAL DATA LEAKAGE PREVENTION:
-- The 'target' variable MUST NEVER appear in the 'features' list
-- The 'target' variable MUST NEVER appear as a key in any data row
-- Data rows contain ONLY feature columns — no target column
-
-WRONG (target 'churn' leaks into data):
-{{"features": ["age","churn"], "target": "churn", "data": [{{"age":22,"churn":0}}]}}
-
-CORRECT:
-{{"features": ["age"], "target": "churn", "data": [{{"age":22}}]}}
-
-MANDATORY JSON STRUCTURE:
+Return ONLY this JSON (no data array):
 {{
   "problemStatement": "Detailed real-world problem description for this specific topic",
   "dataset": {{
-    "description": "What this dataset represents in a real business/research context",
-    "features": ["realistic_name_1", "realistic_name_2", "...all features for this topic"],
+    "description": "What this dataset represents in real business/research context",
+    "features": ["realistic_name_1", "realistic_name_2", "...6-12 names"],
     "feature_types": {{
-      "realistic_name_1": "numerical (continuous, range: X to Y)",
-      "realistic_name_2": "categorical (values: A, B, C)"
+      "realistic_name_1": "numerical (continuous, range: 20 to 150)",
+      "realistic_name_2": "categorical (values: monthly, annual, weekly)"
     }},
     "target": "target_variable_name",
-    "target_type": "binary (0: label0, 1: label1) OR multiclass (classes: A,B,C) OR continuous",
+    "target_type": "binary (0: label0, 1: label1) OR continuous OR multiclass (classes: A, B, C)",
     "class_distribution": {{"class0": 70, "class1": 30}},
-    "size": "N samples",
-    "data": [
-      {{"feature1": realistic_varied_value, "feature2": realistic_varied_value, ...}},
-      ... MINIMUM 50 ROWS, aim for 80-120 rows, all with realistic varied values ...
-    ]
+    "size": "150 samples"
   }},
-  "preprocessing_requirements": [
-    "Specific preprocessing steps actually needed for this dataset"
+  "tasks": [
+    "Task 1: Data Loading and Exploration — load into DataFrame, display first 10 rows, check missing values, data types, shape, summary statistics.",
+    "Task 2: Data Preprocessing — handle missing values, encode categorical features, normalize numerical features, split 80/20 train/test.",
+    "Task 3: Exploratory Data Analysis — visualize target distribution, feature correlations, key feature vs target plots using matplotlib/seaborn.",
+    "Task 4: Model Training — train at least 2 ML models appropriate for this problem, evaluate with relevant metrics.",
+    "Task 5: Model Comparison and Insights — compare models, identify important features, give business recommendations."
   ],
-  "expectedApproach": "Specific ML algorithms and why they suit this problem and difficulty level.",
-  "evaluationCriteria": ["Metrics appropriate for this specific problem type"],
+  "preprocessing_requirements": [
+    "First specific preprocessing step required for THIS dataset (e.g. encode contract_type using LabelEncoder)",
+    "Second specific step (e.g. normalize monthly_bill and tenure_months using MinMaxScaler)",
+    "Third specific step (e.g. handle class imbalance using SMOTE or class_weight=balanced)"
+  ],
+  "expectedApproach": "Name 2-3 specific ML algorithms suited for this problem and explain WHY (e.g. Logistic Regression for interpretability, Random Forest for handling non-linear interactions between features).",
+  "evaluationCriteria": ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"],
   "difficulty": "{request_data['difficulty']}"
 }}
 
-REMINDER: Generate AT LEAST 50 data rows with realistic, varied values. Do not stop early.
-Generate the complete JSON now:"""
+Generate now:"""
+
+
+# ============================================================================
+# AIML DATASET GENERATOR — Pass 2
+# Takes schema from Pass 1, generates realistic rows programmatically.
+# No GPU needed. Instant. Supports 100-500 rows reliably.
+# ============================================================================
+
+def _parse_feature_range(type_str: str):
+    """
+    Parse range from type strings like:
+      'numerical (continuous, range: 20 to 150)'
+      'numerical (continuous, range: 50 to 500 GB)'
+      'numerical (continuous, range: 10 Mbps to 1000 Mbps)'
+      'numerical (integer, range: 1 to 60 months)'
+    Units after numbers are stripped automatically.
+    """
+    # Allow optional unit words (GB, Mbps, minutes, months, etc.) after numbers
+    match = re.search(
+        r'range[:\s]+([0-9\.\-\$k%]+)\s*[a-zA-Z/]*\s+to\s+([0-9\.\-\$k%]+)',
+        type_str, re.IGNORECASE
+    )
+    if not match:
+        return None, None
+    def _clean(v):
+        v = v.strip().replace('$', '').replace('%', '').replace(',', '')
+        if v.lower().endswith('k'):
+            return float(v[:-1]) * 1000
+        return float(v)
+    try:
+        return _clean(match.group(1)), _clean(match.group(2))
+    except:
+        return None, None
+
+def _parse_categorical_values(type_str: str):
+    """Parse values from 'categorical (values: A, B, C)'"""
+    match = re.search(r'values[:\s]+(.+?)(?:\)|\Z)', type_str, re.IGNORECASE)
+    if not match:
+        return None
+    raw = match.group(1)
+    values = [v.strip().strip('"\'') for v in raw.split(',') if v.strip()]
+    return values if values else None
+
+def generate_aiml_dataset(schema: dict, num_rows: int = 150) -> list:
+    """
+    Generate realistic dataset rows from a schema dict.
+    Returns list of dicts (one per row), with target column included.
+    """
+    features = schema.get("features", [])
+    feature_types = schema.get("feature_types", {})
+    target = schema.get("target", "target")
+    target_type_str = schema.get("target_type", "binary (0: no, 1: yes)")
+    class_dist = schema.get("class_distribution", {})
+
+    rng = np.random.default_rng(seed=42)
+
+    is_binary = "binary" in target_type_str.lower()
+    is_continuous = "continuous" in target_type_str.lower() or "regression" in target_type_str.lower()
+    is_multiclass = "multiclass" in target_type_str.lower() or "multi-class" in target_type_str.lower()
+
+    if is_continuous:
+        t_min, t_max = _parse_feature_range(target_type_str)
+        if t_min is None:
+            t_min, t_max = 0.0, 100.0
+        target_values = rng.uniform(t_min, t_max, num_rows).round(2).tolist()
+    elif is_multiclass:
+        match = re.search(r'classes[:\s]+(.+?)(?:\)|\Z)', target_type_str, re.IGNORECASE)
+        if match:
+            classes = [c.strip() for c in match.group(1).split(',')]
+        else:
+            classes = list(class_dist.keys()) if class_dist else ["A", "B", "C"]
+        if class_dist:
+            total_pct = sum(class_dist.values())
+            counts = {c: max(1, int(num_rows * v / total_pct)) for c, v in class_dist.items()}
+        else:
+            per_class = num_rows // len(classes)
+            counts = {c: per_class for c in classes}
+        target_list = []
+        for cls, cnt in counts.items():
+            target_list.extend([cls] * cnt)
+        while len(target_list) < num_rows:
+            target_list.append(classes[0])
+        target_values = target_list[:num_rows]
+        rng.shuffle(target_values)
+    else:
+        # Binary
+        label_match = re.search(r'0[:\s]+(\w+).*?1[:\s]+(\w+)', target_type_str)
+        label0 = label_match.group(1) if label_match else "0"
+        label1 = label_match.group(2) if label_match else "1"
+        keys = list(class_dist.keys())
+        vals = list(class_dist.values())
+        if len(vals) >= 2:
+            total = sum(vals)
+            n_class1 = max(1, int(num_rows * vals[-1] / total))
+        else:
+            n_class1 = num_rows // 4
+        n_class0 = num_rows - n_class1
+        target_values = [0] * n_class0 + [1] * n_class1
+        rng.shuffle(target_values)
+
+    rows = []
+    for row_idx in range(num_rows):
+        row = {}
+        target_val = target_values[row_idx]
+        is_minority_row = (target_val == 1) if is_binary else False
+
+        for feat in features:
+            type_str = feature_types.get(feat, "numerical (continuous, range: 0 to 100)")
+            type_lower = type_str.lower()
+
+            if "categorical" in type_lower:
+                cats = _parse_categorical_values(type_str)
+                if not cats:
+                    cats = ["A", "B", "C"]
+                if is_minority_row and len(cats) >= 2:
+                    weights = [0.3] + [0.7 / (len(cats) - 1)] * (len(cats) - 1)
+                    row[feat] = str(rng.choice(cats, p=weights))
+                else:
+                    row[feat] = str(rng.choice(cats))
+            elif "integer" in type_lower:
+                lo, hi = _parse_feature_range(type_str)
+                if lo is None:
+                    lo, hi = 0, 10
+                lo, hi = int(lo), int(hi)
+                if is_minority_row:
+                    val = int(rng.integers(max(lo, int((lo + hi) * 0.5)), hi + 1))
+                else:
+                    val = int(rng.integers(lo, hi + 1))
+                row[feat] = val
+            else:
+                lo, hi = _parse_feature_range(type_str)
+                if lo is None:
+                    lo, hi = 0.0, 100.0
+                base = rng.uniform(lo, hi)
+                noise = rng.normal(0, (hi - lo) * 0.03)
+                val = float(np.clip(base + noise, lo, hi))
+                row[feat] = round(val, 2)
+
+        row[target] = target_val
+        rows.append(row)
+
+    logger.info(f"Generated {len(rows)} dataset rows for {len(features)} features")
+    return rows
 
 
 # ============================================================================
@@ -2787,12 +2926,16 @@ def validate_aiml_response(obj: dict) -> None:
     if target in features:
         raise ValueError(f"DATA LEAKAGE: Target '{target}' in features list")
 
-    if "data" not in dataset:
-        raise ValueError("Dataset missing 'data' array")
+    # Pass 2 generates data rows programmatically — skip data checks if absent.
+    # This is expected behaviour for the two-pass AIML pipeline.
+    if "data" not in dataset or not dataset["data"]:
+        logger.info("AIML validation: no data array (Pass 2 will generate rows) — schema checks passed")
+        return
 
     data_rows = dataset["data"]
     if not isinstance(data_rows, list) or len(data_rows) == 0:
-        raise ValueError("Dataset data array is empty or not a list")
+        logger.warning("Dataset data array is empty — Pass 2 will fill it")
+        return
 
     first_row = data_rows[0]
     if not isinstance(first_row, dict):
@@ -2805,8 +2948,6 @@ def validate_aiml_response(obj: dict) -> None:
     if expected_features != actual_features:
         missing = expected_features - actual_features
         extra = actual_features - expected_features
-        # Auto-fix: use actual data columns as ground truth instead of hard crashing.
-        # The model sometimes generates slightly different but valid column names.
         logger.warning(
             f"Feature mismatch — missing: {missing}, extra: {extra} — "
             f"reconciling features list to match actual data columns"
@@ -3156,11 +3297,61 @@ async def generate_aiml(request: AIMLGenerationRequest):
                         any_cache_hit = True
                         all_problems.append(cached)
                         continue
+
+                # ── Pass 1: Model generates schema (no data rows) ─────────────
                 token_limit = calculate_aiml_token_limit(item_data)
                 result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
+
+                # ── Pass 2: Python generates dataset rows from schema ──────────
+                difficulty = item_data.get("difficulty", "Medium").lower()
+                num_rows = {"easy": 100, "medium": 150, "hard": 200}.get(difficulty, 150)
+
+                try:
+                    dataset_schema = result.get("dataset", {})
+                    generated_rows = generate_aiml_dataset(dataset_schema, num_rows=num_rows)
+                    result["dataset"]["data"] = generated_rows
+                    result["dataset"]["size"] = f"{len(generated_rows)} samples"
+                    logger.info(f"Pass 2 complete: {len(generated_rows)} rows generated for problem {i+1}")
+                except Exception as gen_err:
+                    logger.error(f"Pass 2 dataset generation failed: {gen_err} — continuing without data rows")
+                    result["dataset"]["data"] = []
+                    result["dataset"]["size"] = "0 samples (generation failed)"
+
+                # ── Fallback for fields the model may return empty ─────────────
+                target_type = result.get("dataset", {}).get("target_type", "")
+                is_regression = "continuous" in target_type.lower()
+
+                if not result.get("preprocessing_requirements") or result["preprocessing_requirements"] == [""]:
+                    features = result.get("dataset", {}).get("features", [])
+                    feature_types = result.get("dataset", {}).get("feature_types", {})
+                    cat_feats = [f for f, t in feature_types.items() if "categorical" in t.lower()]
+                    num_feats = [f for f, t in feature_types.items() if "numerical" in t.lower()]
+                    steps = []
+                    if cat_feats:
+                        steps.append(f"Encode categorical features ({', '.join(cat_feats[:2])}) using LabelEncoder or OneHotEncoder.")
+                    if num_feats:
+                        steps.append(f"Normalize numerical features ({', '.join(num_feats[:2])}) using MinMaxScaler or StandardScaler.")
+                    steps.append("Split dataset 80/20 into training and test sets using train_test_split.")
+                    if not is_regression:
+                        steps.append("Check for class imbalance — apply SMOTE or use class_weight='balanced' if needed.")
+                    result["preprocessing_requirements"] = steps
+
+                if not result.get("expectedApproach") or len(result.get("expectedApproach", "")) < 20:
+                    if is_regression:
+                        result["expectedApproach"] = "Use Linear Regression as a baseline for interpretability. Also train Random Forest Regressor which handles non-linear relationships well. Compare using RMSE and R² score."
+                    else:
+                        result["expectedApproach"] = "Use Logistic Regression as a baseline for interpretability. Also train Random Forest Classifier which handles non-linear feature interactions. Compare using F1-Score and ROC-AUC."
+
+                if not result.get("evaluationCriteria") or result["evaluationCriteria"] == [""]:
+                    if is_regression:
+                        result["evaluationCriteria"] = ["Mean Absolute Error (MAE)", "Root Mean Squared Error (RMSE)", "R² Score", "Mean Absolute Percentage Error (MAPE)"]
+                    else:
+                        result["evaluationCriteria"] = ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"]
+
                 save_to_cache(cache_key, result)
                 total_time += result.get("generation_time_seconds", 0)
                 all_problems.append(result)
+
             JOB_STORE[job_id] = {
                 "status": "complete",
                 "result": {
