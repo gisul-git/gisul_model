@@ -372,8 +372,8 @@ def render_aiml_problem(p: dict, index: int):
             if data_rows:
                 st.write(f"**Dataset ({len(data_rows)} rows):**")
                 try:
-                    df = pd.DataFrame(data_rows).astype(str)
-                    st.table(df)
+                    df = pd.DataFrame(data_rows)
+                    st.dataframe(df, use_container_width=True)
                 except Exception:
                     st.json(data_rows[:5])
             else:
