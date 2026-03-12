@@ -1,4 +1,5 @@
 import streamlit as st
+import matplotlib.pyplot as plt
 import requests
 import pandas as pd
 import time
@@ -26,6 +27,8 @@ if "pending_poll_url" not in st.session_state:
 if "job_start_ts" not in st.session_state:
     st.session_state.job_start_ts = None
 
+is_generating = st.session_state.pending_job_id is not None
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -43,7 +46,7 @@ with st.sidebar:
     )
 
     if st.button(_health_label, use_container_width=True,
-                 disabled=_health_disabled, key="health_btn"):
+                 disabled=_health_disabled or is_generating, key="health_btn"):
         st.session_state.last_health_check = time.time()
         try:
             r = requests.get(f"{_SERVER_BASE}/health", timeout=5)
@@ -57,6 +60,11 @@ with st.sidebar:
                 with col_b:
                     mem = h.get("memory_gb", 0)
                     st.metric("GPU Memory", f"{round(mem, 2)} GB" if mem and mem > 0 else "N/A")
+                col_c, col_d = st.columns(2)
+                with col_c:
+                    st.metric("Active Jobs", h.get("active_jobs", 0))
+                with col_d:
+                    st.metric("Jobs in Store", h.get("total_jobs_in_store", 0))
                 qs = h.get("queue_sizes", {})
                 stuck = {k: v for k, v in qs.items() if v > 0}
                 if stuck:
@@ -74,7 +82,7 @@ with st.sidebar:
     use_cache = st.toggle("Use Cache", value=True,
                           help="Uncheck to bypass cache and always regenerate fresh questions.")
 
-    if st.button("🧹 Clear Cache", use_container_width=True, type="secondary"):
+    if st.button("🧹 Clear Cache", use_container_width=True, type="secondary", disabled=is_generating):
         try:
             r = requests.post(f"{API_BASE}/clear-cache", timeout=10)
             st.success(f"✅ {r.json().get('message', 'Cache cleared')}")
@@ -83,7 +91,7 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button("📊 View Stats", use_container_width=True, key="stats_btn"):
+    if st.button("📊 View Stats", use_container_width=True, key="stats_btn", disabled=is_generating):
         try:
             r = requests.get(f"{_SERVER_BASE}/stats", timeout=5)
             s = r.json()
@@ -322,9 +330,16 @@ def render_sql_problem(p: dict, index: int):
 def render_aiml_problem(p: dict, index: int):
     st.markdown(f"#### AI/ML Problem {index}")
     st.write(p.get("problemStatement", ""))
+
+    # Tasks section
+    if p.get("tasks"):
+        with st.expander("📋 Tasks", expanded=True):
+            for t in p["tasks"]:
+                st.write(f"• {t}")
+
     if p.get("dataset"):
         dataset = p["dataset"]
-        with st.expander("📊 Dataset Details"):
+        with st.expander("📊 Dataset Details", expanded=True):
             st.write(f"**Description:** {dataset.get('description', '')}")
             c1, c2 = st.columns(2)
             with c1:
@@ -334,25 +349,62 @@ def render_aiml_problem(p: dict, index: int):
             with c2:
                 if dataset.get("class_distribution"):
                     st.write("**Class Distribution:**")
-                    st.json(dataset["class_distribution"])
+                    _cd = dataset["class_distribution"]
+                    _labels = list(_cd.keys())
+                    _values = list(_cd.values())
+                    _colors = ["#4CAF50", "#F44336", "#2196F3", "#FF9800", "#9C27B0"]
+                    _fig, _ax = plt.subplots(figsize=(3, 3), facecolor="none")
+                    _ax.pie(
+                        _values, labels=_labels,
+                        colors=_colors[:len(_labels)],
+                        autopct="%1.0f%%", startangle=90,
+                        textprops={"color": "white", "fontsize": 11}
+                    )
+                    _ax.set_facecolor("none")
+                    st.pyplot(_fig, use_container_width=True)
+                    plt.close(_fig)
             if dataset.get("features"):
-                st.write(f"**Features:** {', '.join(f'`{f}`' for f in dataset['features'])}")
+                st.write(f"**Features ({len(dataset['features'])}):** {', '.join(f'`{f}`' for f in dataset['features'])}")
             if dataset.get("feature_types"):
-                with st.expander("Feature Types"): st.json(dataset["feature_types"])
+                st.write("**Feature Types:**")
+                st.json(dataset["feature_types"])
             data_rows = dataset.get("data", [])
             if data_rows:
-                with st.expander(f"Sample Data ({len(data_rows)} rows)"):
-                    try:
-                        df = pd.DataFrame(data_rows)
-                        st.dataframe(df.head(20), use_container_width=True)
-                        if len(data_rows) > 20:
-                            st.caption(f"Showing first 20 of {len(data_rows)} rows.")
-                    except: st.json(data_rows[:5])
+                st.write(f"**Dataset ({len(data_rows)} rows):**")
+                try:
+                    df = pd.DataFrame(data_rows)
+                    st.dataframe(df, use_container_width=True)
+                except Exception:
+                    st.json(data_rows[:5])
+            else:
+                st.warning("No dataset rows generated.")
+
+    # Download button OUTSIDE the expander — avoids React re-render loop
+    data_rows = p.get("dataset", {}).get("data", [])
+    if data_rows:
+        try:
+            csv_data = pd.DataFrame(data_rows).to_csv(index=False)
+            st.download_button(
+                label="⬇️ Download Dataset as CSV",
+                data=csv_data,
+                file_name=f"aiml_dataset_{index}.csv",
+                mime="text/csv",
+                key=f"csv_download_{index}"
+            )
+        except Exception:
+            pass
+
+    if p.get("preprocessing_requirements"):
+        with st.expander("⚙️ Preprocessing Requirements"):
+            for r in p["preprocessing_requirements"]:
+                st.write(f"• {r}")
     if p.get("expectedApproach"):
-        with st.expander("🧪 Expected Approach"): st.write(p["expectedApproach"])
+        with st.expander("🧪 Expected Approach"):
+            st.write(p["expectedApproach"])
     if p.get("evaluationCriteria"):
         with st.expander("📏 Evaluation Criteria"):
-            for c in p["evaluationCriteria"]: st.write(f"• {c}")
+            for c in p["evaluationCriteria"]:
+                st.write(f"• {c}")
     st.caption(f"Difficulty: `{p.get('difficulty', '—')}`")
 
 
@@ -372,7 +424,7 @@ def render_topic(t: dict, index: int):
 # ─────────────────────────────────────────────
 # GENERATE BUTTON
 # ─────────────────────────────────────────────
-if st.button("🚀 Generate", type="primary", use_container_width=True):
+if st.button("🚀 Generate", type="primary", use_container_width=True, disabled=is_generating):
     payload = build_payload()
     url = f"{API_BASE}/{endpoint}"
 
@@ -424,13 +476,24 @@ if st.button("🚀 Generate", type="primary", use_container_width=True):
 # ─────────────────────────────────────────────
 if st.session_state.pending_job_id:
     elapsed = int(time.time() - (st.session_state.job_start_ts or time.time()))
-    st.info(f"⏳ Generating… {elapsed}s elapsed. Checking job status…")
+
+    _messages = [
+        "🧠 Thinking deeply...",
+        "✍️ Crafting questions...",
+        "🔍 Validating output...",
+        "⚙️ Almost there...",
+        "📦 Packaging results...",
+    ]
+    _msg = _messages[(elapsed // 5) % len(_messages)]
+    _progress = min(0.9, elapsed / 120)
+    st.progress(_progress, text=f"{_msg}  •  {elapsed}s elapsed")
 
     try:
-        poll_resp = requests.get(st.session_state.pending_poll_url, timeout=10)
+        poll_resp = requests.get(st.session_state.pending_poll_url, timeout=60)
         poll_data = poll_resp.json()
 
         if poll_data.get("status") == "complete":
+            st.progress(1.0, text="✅ Done!")
             result = poll_data.get("result") or poll_data
             st.session_state.last_response = result
             st.session_state.pending_job_id = None
@@ -438,20 +501,24 @@ if st.session_state.pending_job_id:
             st.session_state.job_start_ts = None
             st.rerun()
 
-        elif poll_data.get("status") == "error":
+        elif poll_data.get("status") in ("failed", "error"):
             st.error(f"❌ Generation failed: {poll_data.get('error', 'Unknown error')}")
             st.session_state.pending_job_id = None
             st.session_state.pending_poll_url = None
             st.session_state.job_start_ts = None
 
         else:
-            # Still pending/processing — wait 3s then rerun
             time.sleep(3)
             st.rerun()
 
+    except requests.exceptions.Timeout:
+        time.sleep(3)
+        st.rerun()
+
     except Exception as e:
-        st.error(f"Polling error: {e}")
-        st.session_state.pending_job_id = None
+        st.warning(f"Polling hiccup, retrying… ({e})")
+        time.sleep(3)
+        st.rerun()
 
 
 # ─────────────────────────────────────────────
@@ -532,3 +599,12 @@ if data:
     st.divider()
     st.subheader("📊 Response Metadata")
     show_metadata(data)
+
+    st.divider()
+    import json as _json
+    st.download_button(
+        label="⬇️ Download as JSON",
+        data=_json.dumps(data, indent=2),
+        file_name="generated_output.json",
+        mime="application/json",
+    )
