@@ -3458,16 +3458,16 @@ Your task — generate ONLY this JSON (no extra text):
     "return_type": "int[]"
   }},
   "public_testcases": [
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": false}},
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": false}},
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": false}}
+    {{"input": {{"nums": [2,7,11,15], "target": 9}}, "expected_output": [0,1], "is_hidden": false}},
+    {{"input": {{"nums": [3,2,4], "target": 6}}, "expected_output": [1,2], "is_hidden": false}},
+    {{"input": {{"nums": [3,3], "target": 6}}, "expected_output": [0,1], "is_hidden": false}}
   ],
   "hidden_testcases": [
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": true}},
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": true}},
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": true}},
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": true}},
-    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "correct_value", "is_hidden": true}}
+    {{"input": {{"nums": [2,7,11,15,100], "target": 101}}, "expected_output": [0,4], "is_hidden": true}},
+    {{"input": {{"nums": [-1,-2,-3,-4,-5], "target": -8}}, "expected_output": [2,4], "is_hidden": true}},
+    {{"input": {{"nums": [0,4,3,0], "target": 0}}, "expected_output": [0,3], "is_hidden": true}},
+    {{"input": {{"nums": [1000000000,999999999], "target": 1999999999}}, "expected_output": [0,1], "is_hidden": true}},
+    {{"input": {{"nums": [1,2,3,4,5,6,7,8,9,10], "target": 19}}, "expected_output": [8,9], "is_hidden": true}}
   ],
   "starter_code": {{
     "python":     "def functionName(param1: List[int], param2: int) -> List[int]:\\n    pass",
@@ -3484,17 +3484,32 @@ Your task — generate ONLY this JSON (no extra text):
 }}
 
 RULES:
-1. function_signature: extract the EXACT function name and parameter names/types from the code snippets above.
-2. public_testcases: use the examples from the problem — convert them to input dict + correct expected_output.
-3. hidden_testcases: generate 5 edge cases that are NOT in the examples:
-   - empty or minimal input
-   - single element
-   - large values at constraint boundaries
-   - duplicate values
-   - negative numbers (if applicable)
-4. expected_output: must be CORRECT — think through each test case carefully before writing the answer.
+1. function_signature: extract the EXACT function name and parameter names/types from the python3 code snippet.
+   - Use proper types: int, int[], str, str[], bool, float, ListNode, TreeNode etc.
+2. public_testcases: convert the examples directly to input dict + expected_output.
+   - input values must be ACTUAL JSON types — arrays as [1,2,3] NOT "[1,2,3]" strings
+   - integers as 9 NOT "9" strings
+   - strings as "abc" with quotes
+3. hidden_testcases: generate 5 edge cases that RESPECT the constraints above.
+   - NEVER violate constraints (e.g. if constraint says 2 <= n, never use empty array or single element)
+   - Use boundary values from constraints (min length, max length, min value, max value)
+   - Include: duplicate values, negative numbers (if allowed), all same elements, already sorted/reversed
+   - input values must be ACTUAL JSON types — arrays as [1,2,3] NOT "[1,2,3]" strings
+4. expected_output: must be CORRECT — carefully compute the answer for each test case.
+   - arrays as [0,1] NOT "[0,1]" strings
+   - integers as 42 NOT "42" strings
 5. starter_code: use the EXACT function name from function_signature for ALL 10 languages.
-6. Return ONLY valid JSON. No markdown, no explanation.
+   - python: standalone function (no class), include type hints
+   - java: inside class Solution
+   - javascript: var functionName = function(...) style
+   - typescript: function functionName(...): returnType style
+   - kotlin: inside class Solution
+   - go: standalone func
+   - rust: inside impl Solution
+   - cpp: inside class Solution with #include
+   - csharp: inside public class Solution
+   - c: standalone function
+6. Return ONLY valid JSON. No markdown, no explanation, no code blocks.
 
 Generate now:"""
 
