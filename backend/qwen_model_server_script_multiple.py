@@ -3428,6 +3428,76 @@ async def clear_cache():
     }
 
 
+@app.post("/api/v1/enrich-dsa")
+async def enrich_dsa(problem: dict = Body(...)):
+    """
+    Takes a raw LeetCode problem JSON and generates:
+    - function_signature
+    - public_testcases (3 visible)
+    - hidden_testcases (5 edge cases)
+    """
+    prompt = f"""You are an expert software engineer.
+
+Given this coding problem:
+Title: {problem['title']}
+Difficulty: {problem['difficulty']}
+Topics: {', '.join(problem.get('topics', []))}
+Description: {problem['description'][:600]}
+Constraints: {chr(10).join(problem.get('constraints', [])[:4])}
+Examples: {json.dumps(problem.get('examples', [])[:2])}
+Python3 starter: {problem.get('code_snippets', {}).get('python3', '')}
+
+Generate ONLY this JSON:
+{{
+  "function_signature": {{
+    "name": "functionName",
+    "parameters": [{{"name": "param1", "type": "int[]"}}, {{"name": "param2", "type": "int"}}],
+    "return_type": "int[]"
+  }},
+  "public_testcases": [
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": false}},
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": false}},
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": false}}
+  ],
+  "hidden_testcases": [
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": true}},
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": true}},
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": true}},
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": true}},
+    {{"input": {{"param1": "value", "param2": "value"}}, "expected_output": "value", "is_hidden": true}}
+  ]
+}}
+
+Rules:
+- Extract function name and parameter types from the Python3 starter code
+- public_testcases: use the examples from the problem directly
+- hidden_testcases: generate edge cases (empty input, single element, large values, duplicates, negative numbers)
+- expected_output must be CORRECT — think through each test case carefully
+- Return ONLY valid JSON, no extra text
+"""
+
+    try:
+        messages = [
+            {"role": "system", "content": "You are an expert software engineer. Return only valid JSON."},
+            {"role": "user", "content": prompt}
+        ]
+        text = TOKENIZER.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
+        output = MODEL.generate(
+            **inputs,
+            max_new_tokens=2000,
+            temperature=0.3,  # low temp for accuracy
+            do_sample=True,
+            pad_token_id=TOKENIZER.eos_token_id
+        )
+        decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
+        decoded = decoded.split("assistant")[-1].strip()
+        result = extract_json(decoded)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # RUN
 # ============================================================================
