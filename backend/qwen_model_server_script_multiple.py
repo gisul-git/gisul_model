@@ -3389,63 +3389,73 @@ async def clear_cache():
 
 
 # ============================================================================
-# DSA ENRICHMENT ENDPOINT v2.0 — TWO-PIPELINE ARCHITECTURE
+# DSA ENRICHMENT ENDPOINT v3.0 — DATASET-DRIVEN
 #
-# PIPELINE A — EXECUTABLE
-#   Detects: array, string, int, float, bool, matrix problems
-#   LLM generates: correct Python solution + raw input values only
-#   Sandbox executes: solution(input) → correct expected_output
-#   Result: 3 public + 5 hidden test cases — 100% accurate
+# Test cases come directly from LeetCodeDataset-train.jsonl
+#   input_output field → structured test cases (100% accurate)
+#   first 3 → public_testcases
+#   next 5  → hidden_testcases
 #
-# PIPELINE B — EXAMPLE_EXTRACT
-#   Detects: TreeNode, ListNode, design class, graph problems
-#   Parses: example_text fields from the problem
-#   Result: 2-3 public test cases from LeetCode examples — guaranteed correct
-#           No hidden test cases
+# Qwen generates ONLY:
+#   function_signature (name, parameters, return_type)
+#   starter_code for 10 languages
 # ============================================================================
 
-# ── Non-executable type signatures ──────────────────────────────────────────
-_NON_EXECUTABLE_TYPES = [
-    "TreeNode", "ListNode", "Node", "NaryNode",
-    "Optional[TreeNode]", "Optional[ListNode]",
-    "Optional[Node]", "NestedInteger", "MountainArray",
-    "IsBadVersion", "GuessGame", "Reader",
-]
-
-# ── Design class pattern — method-call based problems ───────────────────────
-_DESIGN_PATTERNS = [
-    "def __init__", "MyStack", "MyQueue", "LRUCache",
-    "LFUCache", "Trie", "WordDictionary", "MedianFinder",
-    "RandomizedSet", "RandomizedCollection", "PeekingIterator",
-    "BSTIterator", "SnapshotArray", "TimeMap",
-]
-
-
-def _detect_pipeline(python3_snippet: str) -> str:
+def _parse_input_output(input_output: list) -> tuple:
     """
-    Returns 'executable' or 'example_extract'.
-    Checks python3 starter code for non-executable type hints.
+    Parses input_output field from LeetCodeDataset.
+    Each item: {"input": "nums = [2,7,11,15], target = 9", "output": "[0, 1]"}
+
+    Returns (public_testcases, hidden_testcases) as structured dicts.
+    Stores input as raw string + parsed output where possible.
     """
-    for t in _NON_EXECUTABLE_TYPES:
-        if t in python3_snippet:
-            return "example_extract"
-    for d in _DESIGN_PATTERNS:
-        if d in python3_snippet:
-            return "example_extract"
-    return "executable"
+    public_testcases = []
+    hidden_testcases = []
+
+    for i, item in enumerate(input_output):
+        raw_input  = item.get("input", "").strip()
+        raw_output = item.get("output", "").strip()
+
+        if not raw_input or not raw_output:
+            continue
+
+        # Try to parse expected_output as JSON value
+        try:
+            expected_output = json.loads(raw_output)
+        except Exception:
+            # Keep as string if not parseable
+            expected_output = raw_output
+
+        entry = {
+            "input_raw":       raw_input,
+            "expected_output": expected_output,
+            "is_hidden":       i >= 3
+        }
+
+        if i < 3:
+            public_testcases.append(entry)
+        elif i < 8:
+            hidden_testcases.append(entry)
+
+    return public_testcases, hidden_testcases
 
 
-def _build_executable_prompt(problem: dict, lang_refs: str) -> str:
+def _build_starter_prompt(problem: dict) -> str:
     """
-    Pipeline A prompt: LLM generates solution + inputs only.
-    No expected_output — sandbox will compute it.
+    Minimal prompt — only asks Qwen for function_signature + starter_code.
+    Test cases already extracted from dataset.
     """
-    title       = problem.get("title", "")
-    difficulty  = problem.get("difficulty", "Medium")
-    topics      = ", ".join(problem.get("topics", []))
-    description = problem.get("description", "")[:600]
-    constraints = "\n".join(problem.get("constraints", [])[:5])
-    examples    = json.dumps(problem.get("examples", [])[:3], indent=2)
+    title        = problem.get("title", "")
+    difficulty   = problem.get("difficulty", "Medium")
+    topics       = ", ".join(problem.get("tags", problem.get("topics", [])))
+    description  = problem.get("problem_description", problem.get("description", ""))[:400]
+    starter_code = problem.get("starter_code", "")
+    entry_point  = problem.get("entry_point", "")
+
+    # Extract function name from entry_point e.g. "Solution().twoSum" → "twoSum"
+    fn_hint = ""
+    if entry_point:
+        fn_hint = entry_point.split(".")[-1].strip() if "." in entry_point else entry_point
 
     return f"""You are an expert software engineer.
 
@@ -3454,388 +3464,307 @@ Title: {title}
 Difficulty: {difficulty}
 Topics: {topics}
 Description: {description}
-Constraints:
-{constraints}
-Examples:
-{examples}
 
-Existing code snippets for reference:
-{lang_refs}
+Python starter code:
+{starter_code}
 
-Your task — generate ONLY this JSON (no extra text):
+Function name: {fn_hint}
+
+Generate ONLY this JSON (no extra text):
 {{
   "function_signature": {{
-    "name": "exactFunctionName",
+    "name": "{fn_hint}",
     "parameters": [
       {{"name": "paramName1", "type": "List[int]"}},
       {{"name": "paramName2", "type": "int"}}
     ],
     "return_type": "List[int]"
   }},
-  "solution_code": "def exactFunctionName(paramName1: List[int], paramName2: int) -> List[int]:\\n    # correct implementation here\\n    pass",
-  "public_inputs": [
-    {{"paramName1": [2,7,11,15], "paramName2": 9}},
-    {{"paramName1": [3,2,4], "paramName2": 6}},
-    {{"paramName1": [3,3], "paramName2": 6}}
-  ],
-  "hidden_inputs": [
-    {{"paramName1": [1,2,3,4,5], "paramName2": 9}},
-    {{"paramName1": [-1,-2,-3], "paramName2": -3}},
-    {{"paramName1": [0,0,0], "paramName2": 0}},
-    {{"paramName1": [1000000000,1], "paramName2": 1000000001}},
-    {{"paramName1": [2,2,2,2,2], "paramName2": 4}}
-  ],
   "starter_code": {{
-    "python":     "def functionName(param1: List[int], param2: int) -> List[int]:\\n    pass",
-    "java":       "class Solution {{\\n    public int[] functionName(int[] param1, int param2) {{\\n        \\n    }}\\n}}",
-    "javascript": "var functionName = function(param1, param2) {{\\n    \\n}};",
-    "typescript": "function functionName(param1: number[], param2: number): number[] {{\\n    \\n}};",
-    "kotlin":     "class Solution {{\\n    fun functionName(param1: IntArray, param2: Int): IntArray {{\\n        \\n    }}\\n}}",
-    "go":         "func functionName(param1 []int, param2 int) []int {{\\n    \\n}}",
-    "rust":       "impl Solution {{\\n    pub fn function_name(param1: Vec<i32>, param2: i32) -> Vec<i32> {{\\n        \\n    }}\\n}}",
-    "cpp":        "#include <bits/stdc++.h>\\nusing namespace std;\\nclass Solution {{\\npublic:\\n    vector<int> functionName(vector<int>& param1, int param2) {{\\n        \\n    }}\\n}};",
-    "csharp":     "public class Solution {{\\n    public int[] FunctionName(int[] param1, int param2) {{\\n        \\n    }}\\n}}",
-    "c":          "int* functionName(int* param1, int param1Size, int param2, int* returnSize) {{\\n    \\n}}"
-  }}
-}}
-
-CRITICAL RULES:
-1. function_signature: extract EXACT function name + parameter names/types from python3 snippet.
-   Use Python type hints: List[int], List[str], str, int, bool, float, List[List[int]], etc.
-2. solution_code: Write a CORRECT working Python solution as a standalone function.
-   - Must be complete and actually solve the problem correctly.
-   - Use the EXACT same function name and parameters as function_signature.
-   - Import nothing — use only built-in Python.
-   - No class wrapper — standalone function only.
-3. public_inputs: exactly 3 inputs from the examples above.
-   - Use ACTUAL JSON types: arrays as [1,2,3], integers as 9, strings as "abc".
-   - Keys must match parameter names from function_signature exactly.
-   - Do NOT include expected_output — system computes it by executing solution_code.
-4. hidden_inputs: exactly 5 edge case inputs respecting constraints.
-   - Include: boundary values, duplicates, negatives (if allowed), empty (if allowed), max values.
-   - Do NOT include expected_output — system computes it.
-5. starter_code: use EXACT function name for all 10 languages.
-6. Return ONLY valid JSON. No markdown, no explanation.
-
-Generate now:"""
-
-
-def _build_example_extract_prompt(problem: dict, lang_refs: str) -> str:
-    """
-    Pipeline B prompt: LLM generates function_signature + starter_code only.
-    Test cases are extracted from examples text by the system.
-    """
-    title       = problem.get("title", "")
-    difficulty  = problem.get("difficulty", "Medium")
-    topics      = ", ".join(problem.get("topics", []))
-    description = problem.get("description", "")[:400]
-
-    return f"""You are an expert software engineer.
-
-Given this coding problem:
-Title: {title}
-Difficulty: {difficulty}
-Topics: {topics}
-Description: {description}
-
-Existing code snippets for reference:
-{lang_refs}
-
-Your task — generate ONLY this JSON (no extra text):
-{{
-  "function_signature": {{
-    "name": "exactFunctionName",
-    "parameters": [
-      {{"name": "paramName1", "type": "TreeNode"}},
-      {{"name": "paramName2", "type": "int"}}
-    ],
-    "return_type": "TreeNode"
-  }},
-  "starter_code": {{
-    "python":     "def functionName(param1, param2):\\n    pass",
-    "java":       "class Solution {{\\n    public TreeNode functionName(TreeNode param1, int param2) {{\\n        \\n    }}\\n}}",
-    "javascript": "var functionName = function(param1, param2) {{\\n    \\n}};",
-    "typescript": "function functionName(param1: TreeNode | null, param2: number): TreeNode | null {{\\n    \\n}};",
-    "kotlin":     "class Solution {{\\n    fun functionName(param1: TreeNode?, param2: Int): TreeNode? {{\\n        \\n    }}\\n}}",
-    "go":         "func functionName(param1 *TreeNode, param2 int) *TreeNode {{\\n    \\n}}",
-    "rust":       "impl Solution {{\\n    pub fn function_name(param1: Option<Rc<RefCell<TreeNode>>>, param2: i32) -> Option<Rc<RefCell<TreeNode>>> {{\\n        \\n    }}\\n}}",
-    "cpp":        "#include <bits/stdc++.h>\\nusing namespace std;\\nclass Solution {{\\npublic:\\n    TreeNode* functionName(TreeNode* param1, int param2) {{\\n        \\n    }}\\n}};",
-    "csharp":     "public class Solution {{\\n    public TreeNode FunctionName(TreeNode param1, int param2) {{\\n        \\n    }}\\n}}",
-    "c":          "struct TreeNode* functionName(struct TreeNode* param1, int param2) {{\\n    \\n}}"
+    "python":     "def {fn_hint}(param1: List[int], param2: int) -> List[int]:\\n    pass",
+    "java":       "class Solution {{\\n    public int[] {fn_hint}(int[] param1, int param2) {{\\n        \\n    }}\\n}}",
+    "javascript": "var {fn_hint} = function(param1, param2) {{\\n    \\n}};",
+    "typescript": "function {fn_hint}(param1: number[], param2: number): number[] {{\\n    \\n}};",
+    "kotlin":     "class Solution {{\\n    fun {fn_hint}(param1: IntArray, param2: Int): IntArray {{\\n        \\n    }}\\n}}",
+    "go":         "func {fn_hint}(param1 []int, param2 int) []int {{\\n    \\n}}",
+    "rust":       "impl Solution {{\\n    pub fn {fn_hint}(param1: Vec<i32>, param2: i32) -> Vec<i32> {{\\n        \\n    }}\\n}}",
+    "cpp":        "#include <bits/stdc++.h>\\nusing namespace std;\\nclass Solution {{\\npublic:\\n    vector<int> {fn_hint}(vector<int>& param1, int param2) {{\\n        \\n    }}\\n}};",
+    "csharp":     "public class Solution {{\\n    public int[] {fn_hint}(int[] param1, int param2) {{\\n        \\n    }}\\n}}",
+    "c":          "int* {fn_hint}(int* param1, int param1Size, int param2, int* returnSize) {{\\n    \\n}}"
   }}
 }}
 
 RULES:
-1. function_signature: extract EXACT function name + types from the code snippet.
-2. starter_code: use EXACT function name for all 10 languages with correct types.
+1. function_signature: use EXACT function name from entry point above.
+   Extract parameter names + types from the Python starter code.
+   Use Python types: List[int], List[str], str, int, bool, float,
+   Optional[TreeNode], Optional[ListNode], List[List[int]], etc.
+2. starter_code: use EXACT function name for ALL 10 languages.
+   Match parameter types correctly for each language.
 3. Return ONLY valid JSON. No markdown, no explanation.
 
 Generate now:"""
 
 
-def _execute_solution(solution_code: str, fn_name: str, input_dict: dict) -> any:
-    """
-    Executes the LLM-generated solution with given inputs.
-    Returns the computed output or raises on error.
-    """
-    # Build argument list in correct order from input_dict
-    args_str = ", ".join(json.dumps(v) for v in input_dict.values())
-
-    full_code = f"""
-from typing import List, Optional, Tuple, Dict, Set
-import collections
-import heapq
-import math
-import bisect
-import itertools
-import functools
-
-{solution_code}
-
-_result_ = {fn_name}({args_str})
-import json as _json_
-print(_json_.dumps(_result_))
-"""
-
-    _SANDBOX_ENV = {{"PATH": "/usr/bin:/usr/local/bin"}}
-
-    result = subprocess.run(
-        ["python3", "-c", full_code],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        env=_SANDBOX_ENV,
-        cwd="/tmp"
-    )
-
-    if result.returncode != 0:
-        raise ValueError(f"Execution error: {{result.stderr.strip()[:200]}}")
-
-    output = result.stdout.strip()
-    if not output:
-        raise ValueError("Execution produced no output")
-
-    return json.loads(output)
-
-
-def _parse_examples_to_testcases(examples: list) -> list:
-    """
-    Pipeline B: Parses example_text fields into structured test cases.
-    Returns list of {{input_raw, expected_output_raw}} dicts.
-    These are stored as raw text since we can't deserialize tree/list inputs.
-    """
-    testcases = []
-    for ex in examples:
-        text = ex.get("example_text", "")
-        if not text:
-            continue
-
-        lines = text.strip().split("\n")
-        input_line  = ""
-        output_line = ""
-
-        for line in lines:
-            line = line.strip()
-            if line.lower().startswith("input:"):
-                input_line = line[6:].strip()
-            elif line.lower().startswith("output:"):
-                output_line = line[7:].strip()
-
-        if input_line and output_line:
-            testcases.append({
-                "input_raw":           input_line,
-                "expected_output_raw": output_line,
-                "is_hidden":           False,
-                "source":              "leetcode_example"
-            })
-
-    return testcases
-
-
 @app.post("/api/v1/enrich-dsa")
 async def enrich_dsa(problem: dict = Body(...)):
     """
-    Two-pipeline DSA enrichment:
-    - Pipeline A (executable): LLM writes solution + inputs, sandbox executes for correct outputs
-    - Pipeline B (example_extract): parses LeetCode examples for tree/linked list/design problems
+    Dataset-driven DSA enrichment v3.0.
+    Test cases come from input_output field (100% accurate from LeetCodeDataset).
+    Qwen generates only function_signature + starter_code for 10 languages.
     """
-    title         = problem.get("title", "")
-    code_snippets = problem.get("code_snippets", {})
-    python3_code  = code_snippets.get("python3", "").strip()
-    examples      = problem.get("examples", [])
+    title        = problem.get("title", problem.get("task_id", ""))
+    input_output = problem.get("input_output", [])
 
-    # Detect pipeline
-    pipeline = _detect_pipeline(python3_code)
-    logger.info(f"DSA enrich [{pipeline}]: {title}")
+    logger.info(f"DSA enrich v3: {title}")
 
-    # Build language reference stubs for starter_code generation
-    lang_refs = ""
-    lang_map = {
-        "python3":    "Python",
-        "java":       "Java",
-        "javascript": "JavaScript",
-        "typescript": "TypeScript",
-        "kotlin":     "Kotlin",
-        "golang":     "Go",
-        "rust":       "Rust",
-        "cpp":        "C++",
-        "csharp":     "C#",
-        "c":          "C",
+    # ── Step 1: Parse test cases from dataset (no Qwen needed) ───────────────
+    public_testcases, hidden_testcases = _parse_input_output(input_output)
+
+    if not public_testcases and not hidden_testcases:
+        raise HTTPException(
+            status_code=500,
+            detail="No input_output data found — cannot generate test cases"
+        )
+
+    # ── Step 2: Ask Qwen for function_signature + starter_code only ──────────
+    prompt = _build_starter_prompt(problem)
+
+    try:
+        messages = [
+            {"role": "system", "content": "You are an expert software engineer. Return only valid JSON."},
+            {"role": "user",   "content": prompt}
+        ]
+        text = TOKENIZER.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
+        output = MODEL.generate(
+            **inputs_tok,
+            max_new_tokens=2000,
+            temperature=0.2,
+            do_sample=True,
+            top_p=0.9,
+            repetition_penalty=1.1,
+            pad_token_id=TOKENIZER.eos_token_id
+        )
+        decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
+        decoded = decoded.split("assistant")[-1].strip()
+        result  = extract_json(decoded)
+
+    except Exception as e:
+        logger.error(f"Qwen starter generation failed for '{title}': {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Validate required fields
+    for field in ["function_signature", "starter_code"]:
+        if field not in result:
+            raise HTTPException(status_code=500, detail=f"Missing field: {field}")
+
+    logger.info(
+        f"Enrichment done: {title} | "
+        f"public={len(public_testcases)}, hidden={len(hidden_testcases)}, "
+        f"langs={len(result.get('starter_code', {}))}"
+    )
+
+    return {
+        "pipeline":           "dataset_driven",
+        "test_case_source":   "leetcode_dataset",
+        "function_signature": result["function_signature"],
+        "public_testcases":   public_testcases,
+        "hidden_testcases":   hidden_testcases,
+        "starter_code":       result["starter_code"],
     }
-    for key, label in lang_map.items():
-        snippet = code_snippets.get(key, "").strip()
-        if snippet:
-            lang_refs += f"\n{label}:\n{snippet}\n"
 
-    # ── PIPELINE A: EXECUTABLE ───────────────────────────────────────────────
-    if pipeline == "executable":
-        prompt = _build_executable_prompt(problem, lang_refs)
 
-        try:
-            messages = [
-                {"role": "system", "content": "You are an expert software engineer. Return only valid JSON."},
-                {"role": "user",   "content": prompt}
-            ]
-            text = TOKENIZER.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
-            output = MODEL.generate(
-                **inputs_tok,
-                max_new_tokens=3000,
-                temperature=0.2,
-                do_sample=True,
-                top_p=0.9,
-                repetition_penalty=1.1,
-                pad_token_id=TOKENIZER.eos_token_id
-            )
-            decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
-            decoded = decoded.split("assistant")[-1].strip()
-            result  = extract_json(decoded)
 
-        except Exception as e:
-            logger.error(f"Pipeline A LLM failed for '{title}': {e}")
-            raise HTTPException(status_code=500, detail=str(e))
 
-        # Validate required fields
-        for field in ["function_signature", "solution_code", "public_inputs", "hidden_inputs", "starter_code"]:
-            if field not in result:
-                raise HTTPException(status_code=500, detail=f"Missing field: {field}")
+# ============================================================================
+# DSA QUESTION GENERATION ENDPOINT
+# Filters dsa_enriched.json by difficulty + topic/concepts keyword match,
+# picks one randomly, rewrites only the problem wording via Qwen,
+# returns reworded question + original test cases + requested languages only.
+# ============================================================================
 
-        fn_name       = result["function_signature"].get("name", "")
-        solution_code = result["solution_code"]
-        public_inputs = result.get("public_inputs", [])
-        hidden_inputs = result.get("hidden_inputs", [])
+import os as _os
 
-        if not fn_name:
-            raise HTTPException(status_code=500, detail="Missing function name in signature")
+_DSA_ENRICHED_PATH = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\dsa-coding\dsa_enriched.json"
+_dsa_enriched_cache = None
 
-        # Execute solution for each input to get correct expected_output
-        public_testcases = []
-        hidden_testcases = []
 
-        for inp in public_inputs:
-            try:
-                expected = _execute_solution(solution_code, fn_name, inp)
-                public_testcases.append({
-                    "input":           inp,
-                    "expected_output": expected,
-                    "is_hidden":       False
-                })
-            except Exception as ex:
-                logger.warning(f"Execution failed for public input {inp}: {ex}")
-                continue
+def _load_dsa_enriched():
+    global _dsa_enriched_cache
+    if _dsa_enriched_cache is None:
+        if not _os.path.exists(_DSA_ENRICHED_PATH):
+            raise FileNotFoundError(f"dsa_enriched.json not found at {_DSA_ENRICHED_PATH}")
+        with open(_DSA_ENRICHED_PATH, encoding="utf-8") as f:
+            _dsa_enriched_cache = json.load(f)
+        logger.info(f"Loaded {len(_dsa_enriched_cache)} problems from dsa_enriched.json")
+    return _dsa_enriched_cache
 
-        for inp in hidden_inputs:
-            try:
-                expected = _execute_solution(solution_code, fn_name, inp)
-                hidden_testcases.append({
-                    "input":           inp,
-                    "expected_output": expected,
-                    "is_hidden":       True
-                })
-            except Exception as ex:
-                logger.warning(f"Execution failed for hidden input {inp}: {ex}")
-                continue
 
-        # Need at least 1 public test case to be valid
-        if not public_testcases:
-            raise HTTPException(
-                status_code=500,
-                detail="All executions failed — solution code may be incorrect"
-            )
+def _filter_dsa_problems(problems: list, difficulty: str, topic: str, concepts: list) -> list:
+    difficulty_lower = difficulty.lower()
+    keywords = [topic.lower()] + [c.lower() for c in concepts]
 
-        logger.info(
-            f"Pipeline A done: {title} | "
-            f"public={len(public_testcases)}, hidden={len(hidden_testcases)}"
+    matched = []
+    for p in problems:
+        if p.get("difficulty", "").lower() != difficulty_lower:
+            continue
+        # Search across title, description, problem_description, tags, topics
+        searchable = " ".join([
+            p.get("title", ""),
+            p.get("task_id", ""),
+            p.get("problem_description", ""),
+            p.get("description", ""),
+            " ".join(p.get("tags", [])),
+            " ".join(p.get("topics", [])),
+        ]).lower()
+
+        if any(kw in searchable for kw in keywords):
+            matched.append(p)
+
+    return matched
+
+
+def _build_reword_prompt(problem: dict) -> str:
+    title       = problem.get("title", problem.get("task_id", ""))
+    description = problem.get("problem_description", problem.get("description", ""))[:600]
+
+    return f"""You are a technical problem designer.
+
+Below is a coding problem. Your job is to REWORD the problem statement and title ONLY.
+
+STRICT RULES:
+- Keep the EXACT same algorithmic logic and solution approach.
+- Keep the EXACT same input/output format.
+- Change ONLY the real-world story/context (names, domain, scenario wording).
+- The reworded version must be clearly different from the original wording.
+- Do NOT simplify or make the problem easier or harder.
+- Return ONLY valid JSON — no markdown, no extra text.
+
+ORIGINAL TITLE: {title}
+
+ORIGINAL DESCRIPTION:
+{description}
+
+Return this exact JSON structure:
+{{
+  "title": "Reworded title here",
+  "description": "Reworded full problem description here — same logic, different story/context"
+}}
+
+Generate now:"""
+
+
+class DSAQuestionRequest(BaseModel):
+    difficulty: str
+    topic: str
+    concepts: List[str] = []
+    languages: List[str] = []
+
+
+@app.post("/api/v1/generate-dsa-question")
+async def generate_dsa_question(request: DSAQuestionRequest):
+    """
+    Filters dsa_enriched.json by difficulty + topic/concepts keyword match.
+    Randomly picks one matched problem.
+    Rewrites only the problem wording using Qwen.
+    Returns reworded question + original test cases + requested languages only.
+    """
+    try:
+        problems = _load_dsa_enriched()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Filter by difficulty + topic/concepts
+    matched = _filter_dsa_problems(
+        problems,
+        request.difficulty,
+        request.topic,
+        request.concepts
+    )
+
+    if not matched:
+        # Fallback: filter by difficulty only
+        logger.warning(
+            f"No match for topic='{request.topic}' concepts={request.concepts} "
+            f"difficulty='{request.difficulty}' — falling back to difficulty-only filter"
+        )
+        matched = [
+            p for p in problems
+            if p.get("difficulty", "").lower() == request.difficulty.lower()
+        ]
+
+    if not matched:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No problems found for difficulty='{request.difficulty}'"
         )
 
-        return {
-            "pipeline":          "executable",
-            "test_case_source":  "executed",
-            "function_signature": result["function_signature"],
-            "public_testcases":  public_testcases,
-            "hidden_testcases":  hidden_testcases,
-            "starter_code":      result["starter_code"],
+    # Random pick
+    selected = random.choice(matched)
+    logger.info(f"DSA question selected: '{selected.get('title', selected.get('task_id'))}' ({selected.get('difficulty')})")
+
+    # Reword using Qwen
+    prompt = _build_reword_prompt(selected)
+
+    try:
+        messages = [
+            {"role": "system", "content": "You are a technical problem designer. Return only valid JSON."},
+            {"role": "user",   "content": prompt}
+        ]
+        text = TOKENIZER.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
+        output = MODEL.generate(
+            **inputs_tok,
+            max_new_tokens=1500,
+            temperature=0.75,
+            do_sample=True,
+            top_p=0.9,
+            repetition_penalty=1.1,
+            pad_token_id=TOKENIZER.eos_token_id
+        )
+        decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
+        decoded = decoded.split("assistant")[-1].strip()
+        reworded = extract_json(decoded)
+
+    except Exception as e:
+        logger.error(f"Qwen reword failed: {e} — returning original wording")
+        reworded = {
+            "title":       selected.get("title", selected.get("task_id", "")),
+            "description": selected.get("problem_description", selected.get("description", ""))
         }
 
-    # ── PIPELINE B: EXAMPLE_EXTRACT ──────────────────────────────────────────
+    # Filter starter_code to requested languages only
+    all_starter_code = selected.get("starter_code", {})
+    if request.languages:
+        filtered_starter_code = {
+            lang: code
+            for lang, code in all_starter_code.items()
+            if lang.lower() in [l.lower() for l in request.languages]
+        }
     else:
-        prompt = _build_example_extract_prompt(problem, lang_refs)
+        filtered_starter_code = all_starter_code
 
-        try:
-            messages = [
-                {"role": "system", "content": "You are an expert software engineer. Return only valid JSON."},
-                {"role": "user",   "content": prompt}
-            ]
-            text = TOKENIZER.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
-            output = MODEL.generate(
-                **inputs_tok,
-                max_new_tokens=1500,
-                temperature=0.2,
-                do_sample=True,
-                top_p=0.9,
-                repetition_penalty=1.1,
-                pad_token_id=TOKENIZER.eos_token_id
-            )
-            decoded = TOKENIZER.decode(output[0], skip_special_tokens=True)
-            decoded = decoded.split("assistant")[-1].strip()
-            result  = extract_json(decoded)
-
-        except Exception as e:
-            logger.error(f"Pipeline B LLM failed for '{title}': {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-        # Validate
-        for field in ["function_signature", "starter_code"]:
-            if field not in result:
-                raise HTTPException(status_code=500, detail=f"Missing field: {field}")
-
-        # Parse test cases from example_text fields
-        public_testcases = _parse_examples_to_testcases(examples)
-
-        logger.info(
-            f"Pipeline B done: {title} | "
-            f"public={len(public_testcases)}, hidden=0 (example_extract)"
-        )
-
-        return {
-            "pipeline":           "example_extract",
-            "test_case_source":   "examples_only",
-            "function_signature": result["function_signature"],
-            "public_testcases":   public_testcases,
-            "hidden_testcases":   [],
-            "starter_code":       result["starter_code"],
-        }
+    return {
+        "original_title":     selected.get("title", selected.get("task_id", "")),
+        "title":              reworded.get("title", selected.get("title", "")),
+        "description":        reworded.get("description", selected.get("problem_description", "")),
+        "function_signature": selected.get("function_signature", {}),
+        "public_testcases":   selected.get("public_testcases", []),
+        "hidden_testcases":   selected.get("hidden_testcases", []),
+        "starter_code":       filtered_starter_code,
+        "difficulty":         selected.get("difficulty", request.difficulty),
+        "tags":               selected.get("tags", selected.get("topics", [])),
+        "ai_generated":       True,
+        "reworded":           True
+    }
 
 
 
-# ============================================================================
-# RUN
-# ============================================================================
 
 if __name__ == "__main__":
     import uvicorn
