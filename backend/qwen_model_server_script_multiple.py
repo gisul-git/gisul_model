@@ -3401,18 +3401,79 @@ async def clear_cache():
 #   starter_code for 10 languages
 # ============================================================================
 
+def _classify_testcase(raw_input: str) -> str:
+    """
+    Classifies a test case as 'simple' or 'edge' by analyzing the input string.
+
+    Simple indicators:
+      - Small arrays (length < 8 elements)
+      - Small numbers (all values < 1000)
+      - No negatives
+      - Short strings (length < 10)
+
+    Edge case indicators:
+      - Large arrays (>= 8 elements)
+      - Large numbers (>= 10^6)
+      - Negative numbers
+      - Empty arrays/strings
+      - Single element arrays
+      - All same elements
+      - Very long strings
+    """
+    import re
+
+    # Check for large numbers
+    numbers = re.findall(r'-?\d+', raw_input)
+    if numbers:
+        vals = [int(n) for n in numbers]
+        if any(abs(v) >= 1000000 for v in vals):
+            return "edge"
+        if any(v < 0 for v in vals):
+            return "edge"
+
+    # Check for large arrays
+    arrays = re.findall(r'\[([^\[\]]*)\]', raw_input)
+    for arr in arrays:
+        elements = [e.strip() for e in arr.split(',') if e.strip()]
+        if len(elements) == 0:
+            return "edge"   # empty array
+        if len(elements) == 1:
+            return "edge"   # single element
+        if len(elements) >= 8:
+            return "edge"   # large array
+        # All same elements
+        if len(set(elements)) == 1 and len(elements) > 1:
+            return "edge"
+
+    # Check for empty strings
+    if '""' in raw_input or "''" in raw_input:
+        return "edge"
+
+    # Check for long strings
+    strings = re.findall(r'"([^"]*)"', raw_input)
+    for s in strings:
+        if len(s) >= 10:
+            return "edge"
+
+    return "simple"
+
+
 def _parse_input_output(input_output: list) -> tuple:
     """
     Parses input_output field from LeetCodeDataset.
     Each item: {"input": "nums = [2,7,11,15], target = 9", "output": "[0, 1]"}
 
-    Returns (public_testcases, hidden_testcases) as structured dicts.
-    Stores input as raw string + parsed output where possible.
-    """
-    public_testcases = []
-    hidden_testcases = []
+    Strategy:
+      - Classify each test case as 'simple' or 'edge' by analyzing input
+      - Take first 4 simple ones → public_testcases
+      - Take first 8 edge/remaining ones → hidden_testcases
+      - Fallback: if not enough simple ones, use position (first 4 = public)
 
-    for i, item in enumerate(input_output):
+    Returns (public_testcases, hidden_testcases).
+    """
+    all_cases = []
+
+    for item in input_output:
         raw_input  = item.get("input", "").strip()
         raw_output = item.get("output", "").strip()
 
@@ -3423,19 +3484,46 @@ def _parse_input_output(input_output: list) -> tuple:
         try:
             expected_output = json.loads(raw_output)
         except Exception:
-            # Keep as string if not parseable
             expected_output = raw_output
 
-        entry = {
+        case_type = _classify_testcase(raw_input)
+
+        all_cases.append({
             "input_raw":       raw_input,
             "expected_output": expected_output,
-            "is_hidden":       i >= 3
-        }
+            "case_type":       case_type,
+        })
 
-        if i < 3:
-            public_testcases.append(entry)
-        elif i < 8:
-            hidden_testcases.append(entry)
+    # Split into simple and edge
+    simple_cases = [c for c in all_cases if c["case_type"] == "simple"]
+    edge_cases   = [c for c in all_cases if c["case_type"] == "edge"]
+
+    # If not enough simple cases, fall back to positional split
+    if len(simple_cases) < 2:
+        simple_cases = all_cases[:4]
+        edge_cases   = all_cases[4:]
+
+    # Build public — first 4 simple
+    public_testcases = []
+    for c in simple_cases[:4]:
+        public_testcases.append({
+            "input_raw":       c["input_raw"],
+            "expected_output": c["expected_output"],
+            "is_hidden":       False,
+            "case_type":       "simple"
+        })
+
+    # Build hidden — first 8 edge cases
+    # Fill remaining slots from simple if not enough edge cases
+    hidden_pool = edge_cases + [c for c in simple_cases[4:]]
+    hidden_testcases = []
+    for c in hidden_pool[:8]:
+        hidden_testcases.append({
+            "input_raw":       c["input_raw"],
+            "expected_output": c["expected_output"],
+            "is_hidden":       True,
+            "case_type":       "edge"
+        })
 
     return public_testcases, hidden_testcases
 
