@@ -19,16 +19,11 @@ RUN pip3 install --upgrade pip
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy main server script
 COPY qwen_model_server_script_multiple.py /app/qwen_model_server_script_multiple.py
 
-# Copy DSA files
 COPY assests/dsa-coding/dsa_enriched.json /app/assests/dsa-coding/dsa_enriched.json
 COPY assests/dsa-coding/dsa_faiss.index /app/assests/dsa-coding/dsa_faiss.index
 COPY assests/dsa-coding/dsa_metadata.json /app/assests/dsa-coding/dsa_metadata.json
-
-# Copy AIML catalog
-COPY assests/aiml-data/aiml_dataset_catalog.json /app/assests/aiml-data/aiml_dataset_catalog.json
 
 EXPOSE 9000
 
