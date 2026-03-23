@@ -47,7 +47,7 @@ jobs:
 
       - name: Deploy containers (Zero downtime)
         run: |
-          cd /mnt/c/Users/aditya/documents/gisul/gisul_model
+          cd /mnt/c/Users/adity/documents/gisul/gisul_model
 
           docker compose pull
           docker compose up -d --remove-orphans
