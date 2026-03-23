@@ -21,10 +21,9 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY qwen_model_server_script_multiple.py /app/qwen_model_server_script_multiple.py
 
-COPY assests/dsa-coding/dsa_enriched.json /app/assests/dsa-coding/dsa_enriched.json
-COPY assests/dsa-coding/dsa_faiss.index /app/assests/dsa-coding/dsa_faiss.index
-COPY assests/dsa-coding/dsa_metadata.json /app/assests/dsa-coding/dsa_metadata.json
-
+COPY assets/dsa-coding/dsa_enriched.json /app/assets/dsa-coding/dsa_enriched.json
+COPY assets/dsa-coding/dsa_faiss.index /app/assets/dsa-coding/dsa_faiss.index
+COPY assets/dsa-coding/dsa_metadata.json /app/assets/dsa-coding/dsa_metadata.json
 EXPOSE 9000
 
 CMD ["uvicorn", "qwen_model_server_script_multiple:app", "--host", "0.0.0.0", "--port", "9000"]
