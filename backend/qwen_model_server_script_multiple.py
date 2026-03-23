@@ -2308,7 +2308,7 @@ def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000, tempera
             pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
         )
     except torch.cuda.OutOfMemoryError:
-        logger.warning(f"CUDA OOM on batch of {len(prompts)} — clearing cache and retrying as batch_size=1")
+        logger.warning(f"CUDA OOM on batch of {len(prompts)} — clearing cache  and retrying as batch_size=1")
         torch.cuda.empty_cache()
         if len(prompts) == 1:
             raise
