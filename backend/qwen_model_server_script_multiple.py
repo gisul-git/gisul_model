@@ -3676,9 +3676,9 @@ async def enrich_dsa(problem: dict = Body(...)):
 import os as _os
 import numpy as _np
 
-_DSA_ENRICHED_PATH = "/app/assests/dsa-coding/dsa_enriched.json"
-_DSA_FAISS_PATH    = "/app/assests/dsa-coding/dsa_faiss.index"
-_DSA_METADATA_PATH = "/app/assests/dsa-coding/dsa_metadata.json"
+_DSA_ENRICHED_PATH = "/app/assets/dsa-coding/dsa_enriched.json"
+_DSA_FAISS_PATH    = "/app/assets/dsa-coding/dsa_faiss.index"
+_DSA_METADATA_PATH = "/app/assets/dsa-coding/dsa_metadata.json"
 
 _dsa_enriched_cache  = None
 _dsa_faiss_index     = None
@@ -3938,9 +3938,9 @@ async def generate_dsa_question(request: DSAQuestionRequest):
 # ============================================================================
 
 # ── AIML catalog paths ───────────────────────────────────────────────────────
-_AIML_CATALOG_PATH   = "/app/assests/aiml-data/aiml_dataset_catalog.json"
-_AIML_FAISS_PATH     = "/app/assests/aiml-data/aiml_faiss.index"
-_AIML_METADATA_PATH  = "/app/assests/aiml-data/aiml_catalog_metadata.json"
+_AIML_CATALOG_PATH   = "/app/assets/aiml-data/aiml_dataset_catalog.json"
+_AIML_FAISS_PATH     = "/app/assets/aiml-data/aiml_faiss.index"
+_AIML_METADATA_PATH  = "/app/assets/aiml-data/aiml_catalog_metadata.json"
 
 _aiml_catalog_cache  = None
 _aiml_faiss_index    = None
