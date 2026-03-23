@@ -1,0 +1,905 @@
+[
+    {
+      "id": "sklearn-breast-cancer",
+      "name": "Breast Cancer Wisconsin",
+      "source": "sklearn",
+      "load_function": "load_breast_cancer",
+      "load_code": "from sklearn.datasets import load_breast_cancer\nimport pandas as pd\ndata = load_breast_cancer()\ndf = pd.DataFrame(data.data, columns=data.feature_names)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "569 samples of breast cancer tumor measurements. 30 numerical features computed from digitized images of fine needle aspirate. Binary classification: malignant vs benign.",
+      "domain": "Healthcare",
+      "tags": [
+        "cancer",
+        "medical",
+        "classification",
+        "binary",
+        "tumor",
+        "healthcare",
+        "diagnosis",
+        "clinical"
+      ],
+      "features_description": "30 features: mean, standard error, worst values of radius, texture, perimeter, area, smoothness, compactness, concavity, symmetry",
+      "target": "target",
+      "target_type": "binary (0: malignant, 1: benign)",
+      "size": "569 rows x 30 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-wine",
+      "name": "Wine Quality Recognition",
+      "source": "sklearn",
+      "load_function": "load_wine",
+      "load_code": "from sklearn.datasets import load_wine\nimport pandas as pd\ndata = load_wine()\ndf = pd.DataFrame(data.data, columns=data.feature_names)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "178 wine samples from 3 cultivars in Italy. 13 chemical analysis features. Multiclass classification problem.",
+      "domain": "Food & Beverage",
+      "tags": [
+        "wine",
+        "classification",
+        "multiclass",
+        "chemistry",
+        "food",
+        "quality"
+      ],
+      "features_description": "13 features: alcohol, malic acid, ash, alkalinity, magnesium, phenols, flavanoids, nonflavanoid phenols, proanthocyanins, color intensity, hue, OD280/OD315, proline",
+      "target": "target",
+      "target_type": "multiclass (0: class_0, 1: class_1, 2: class_2)",
+      "size": "178 rows x 13 features",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-digits",
+      "name": "Handwritten Digits",
+      "source": "sklearn",
+      "load_function": "load_digits",
+      "load_code": "from sklearn.datasets import load_digits\nimport pandas as pd\ndata = load_digits()\ndf = pd.DataFrame(data.data)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "1797 grayscale 8x8 images of handwritten digits 0-9. 64 pixel features. Classic multiclass classification for digit recognition.",
+      "domain": "Computer Vision",
+      "tags": [
+        "digits",
+        "image",
+        "classification",
+        "multiclass",
+        "handwriting",
+        "ocr",
+        "vision",
+        "recognition"
+      ],
+      "features_description": "64 features: pixel values (0-16) of 8x8 image flattened into 1D array",
+      "target": "target",
+      "target_type": "multiclass (0-9)",
+      "size": "1797 rows x 64 features",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-iris",
+      "name": "Iris Flower Classification",
+      "source": "sklearn",
+      "load_function": "load_iris",
+      "load_code": "from sklearn.datasets import load_iris\nimport pandas as pd\ndata = load_iris()\ndf = pd.DataFrame(data.data, columns=data.feature_names)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "150 iris flower samples from 3 species. 4 morphological features. Classic multiclass classification benchmark dataset.",
+      "domain": "Biology",
+      "tags": [
+        "iris",
+        "flower",
+        "classification",
+        "multiclass",
+        "biology",
+        "species",
+        "botany"
+      ],
+      "features_description": "4 features: sepal length, sepal width, petal length, petal width (all in cm)",
+      "target": "target",
+      "target_type": "multiclass (0: setosa, 1: versicolor, 2: virginica)",
+      "size": "150 rows x 4 features",
+      "difficulty": [
+        "Easy"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-diabetes",
+      "name": "Diabetes Progression",
+      "source": "sklearn",
+      "load_function": "load_diabetes",
+      "load_code": "from sklearn.datasets import load_diabetes\nimport pandas as pd\ndata = load_diabetes()\ndf = pd.DataFrame(data.data, columns=data.feature_names)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "442 diabetes patients with 10 baseline features. Target is quantitative measure of disease progression after one year. Regression problem.",
+      "domain": "Healthcare",
+      "tags": [
+        "diabetes",
+        "medical",
+        "regression",
+        "healthcare",
+        "clinical",
+        "glucose",
+        "insulin",
+        "disease"
+      ],
+      "features_description": "10 features: age, sex, bmi, blood pressure, s1-s6 serum measurements (all normalized)",
+      "target": "target",
+      "target_type": "continuous (disease progression score)",
+      "size": "442 rows x 10 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-california-housing",
+      "name": "California Housing Prices",
+      "source": "sklearn",
+      "load_function": "fetch_california_housing",
+      "load_code": "from sklearn.datasets import fetch_california_housing\nimport pandas as pd\ndata = fetch_california_housing()\ndf = pd.DataFrame(data.data, columns=data.feature_names)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "20640 California census tract housing data. 8 features about demographics and geography. Regression to predict median house value.",
+      "domain": "Real Estate",
+      "tags": [
+        "housing",
+        "price",
+        "regression",
+        "real estate",
+        "california",
+        "census",
+        "prediction",
+        "property"
+      ],
+      "features_description": "8 features: median income, house age, average rooms, average bedrooms, population, average occupancy, latitude, longitude",
+      "target": "MedHouseVal",
+      "target_type": "continuous (median house value in $100k)",
+      "size": "20640 rows x 8 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-make-classification",
+      "name": "Synthetic Classification Dataset",
+      "source": "sklearn",
+      "load_function": "make_classification",
+      "load_code": "from sklearn.datasets import make_classification\nimport pandas as pd\nX, y = make_classification(n_samples=1000, n_features=15, n_informative=10, n_redundant=3, random_state=42)\nfeature_names = [f'feature_{i}' for i in range(X.shape[1])]\ndf = pd.DataFrame(X, columns=feature_names)\ndf['target'] = y\nprint(df.shape)\nprint(df.head())",
+      "description": "Configurable synthetic binary or multiclass classification dataset. Useful for fraud detection, churn prediction, risk scoring, and any custom classification scenario.",
+      "domain": "General",
+      "tags": [
+        "classification",
+        "synthetic",
+        "fraud",
+        "churn",
+        "risk",
+        "binary",
+        "custom",
+        "general"
+      ],
+      "features_description": "Configurable features: n_informative informative, n_redundant redundant, n_repeated repeated features",
+      "target": "target",
+      "target_type": "binary or multiclass (configurable)",
+      "size": "configurable (default 1000 rows x 15 features)",
+      "difficulty": [
+        "Easy",
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-make-regression",
+      "name": "Synthetic Regression Dataset",
+      "source": "sklearn",
+      "load_function": "make_regression",
+      "load_code": "from sklearn.datasets import make_regression\nimport pandas as pd\nX, y = make_regression(n_samples=1000, n_features=15, n_informative=10, noise=0.1, random_state=42)\nfeature_names = [f'feature_{i}' for i in range(X.shape[1])]\ndf = pd.DataFrame(X, columns=feature_names)\ndf['target'] = y\nprint(df.shape)\nprint(df.head())",
+      "description": "Configurable synthetic regression dataset. Useful for sales prediction, price estimation, demand forecasting, and any custom regression scenario.",
+      "domain": "General",
+      "tags": [
+        "regression",
+        "synthetic",
+        "sales",
+        "prediction",
+        "forecasting",
+        "price",
+        "estimation",
+        "custom"
+      ],
+      "features_description": "Configurable features with specified informative features and Gaussian noise",
+      "target": "target",
+      "target_type": "continuous",
+      "size": "configurable (default 1000 rows x 15 features)",
+      "difficulty": [
+        "Easy",
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-make-blobs",
+      "name": "Synthetic Clustering Dataset",
+      "source": "sklearn",
+      "load_function": "make_blobs",
+      "load_code": "from sklearn.datasets import make_blobs\nimport pandas as pd\nX, y = make_blobs(n_samples=1000, centers=4, n_features=10, random_state=42)\nfeature_names = [f'feature_{i}' for i in range(X.shape[1])]\ndf = pd.DataFrame(X, columns=feature_names)\ndf['cluster'] = y\nprint(df.shape)\nprint(df.head())",
+      "description": "Synthetic isotropic Gaussian blobs for clustering. Useful for customer segmentation, market segmentation, anomaly detection, and unsupervised learning tasks.",
+      "domain": "General",
+      "tags": [
+        "clustering",
+        "segmentation",
+        "unsupervised",
+        "blobs",
+        "customer",
+        "market",
+        "kmeans"
+      ],
+      "features_description": "Configurable features generated from Gaussian distributions centered at specified cluster centers",
+      "target": "cluster",
+      "target_type": "multiclass (cluster labels)",
+      "size": "configurable (default 1000 rows x 10 features)",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-make-moons",
+      "name": "Synthetic Non-Linear Classification (Moons)",
+      "source": "sklearn",
+      "load_function": "make_moons",
+      "load_code": "from sklearn.datasets import make_moons\nimport pandas as pd\nX, y = make_moons(n_samples=1000, noise=0.1, random_state=42)\ndf = pd.DataFrame(X, columns=['feature_1', 'feature_2'])\ndf['target'] = y\nprint(df.shape)\nprint(df.head())",
+      "description": "Two interleaving half-circle clusters. Tests non-linear classifiers. Useful for demonstrating SVM, neural networks, and ensemble methods.",
+      "domain": "General",
+      "tags": [
+        "non-linear",
+        "classification",
+        "svm",
+        "neural network",
+        "boundary",
+        "synthetic"
+      ],
+      "features_description": "2 features representing 2D coordinates of moon-shaped clusters",
+      "target": "target",
+      "target_type": "binary (0, 1)",
+      "size": "configurable (default 1000 rows x 2 features)",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-make-circles",
+      "name": "Synthetic Non-Linear Classification (Circles)",
+      "source": "sklearn",
+      "load_function": "make_circles",
+      "load_code": "from sklearn.datasets import make_circles\nimport pandas as pd\nX, y = make_circles(n_samples=1000, noise=0.05, factor=0.5, random_state=42)\ndf = pd.DataFrame(X, columns=['feature_1', 'feature_2'])\ndf['target'] = y\nprint(df.shape)\nprint(df.head())",
+      "description": "Large circle containing a small circle. Tests kernel methods and non-linear classifiers. Useful for demonstrating RBF-SVM and deep learning.",
+      "domain": "General",
+      "tags": [
+        "non-linear",
+        "classification",
+        "kernel",
+        "svm",
+        "rbf",
+        "circles",
+        "synthetic"
+      ],
+      "features_description": "2 features representing 2D coordinates of concentric circle clusters",
+      "target": "target",
+      "target_type": "binary (0: outer circle, 1: inner circle)",
+      "size": "configurable (default 1000 rows x 2 features)",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-20newsgroups",
+      "name": "20 Newsgroups Text",
+      "source": "sklearn",
+      "load_function": "fetch_20newsgroups",
+      "load_code": "from sklearn.datasets import fetch_20newsgroups\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nimport pandas as pd\ndata = fetch_20newsgroups(subset='train', remove=('headers', 'footers', 'quotes'))\ndf = pd.DataFrame({'text': data.data, 'target': data.target})\ndf['category'] = df['target'].map(dict(enumerate(data.target_names)))\nprint(df.shape)\nprint(df.head())",
+      "description": "18846 newsgroup posts from 20 different categories. Classic NLP text classification dataset. Topics include politics, religion, sports, technology.",
+      "domain": "NLP",
+      "tags": [
+        "nlp",
+        "text",
+        "classification",
+        "news",
+        "multiclass",
+        "tfidf",
+        "sentiment",
+        "topic modeling"
+      ],
+      "features_description": "Raw text posts from 20 newsgroup categories",
+      "target": "target",
+      "target_type": "multiclass (20 categories)",
+      "size": "18846 rows x 1 text feature",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "sklearn-olivetti-faces",
+      "name": "Olivetti Faces",
+      "source": "sklearn",
+      "load_function": "fetch_olivetti_faces",
+      "load_code": "from sklearn.datasets import fetch_olivetti_faces\nimport pandas as pd\ndata = fetch_olivetti_faces()\ndf = pd.DataFrame(data.data)\ndf['target'] = data.target\nprint(df.shape)\nprint(df.head())",
+      "description": "400 grayscale 64x64 face images of 40 distinct subjects. Each subject has 10 photos. Used for face recognition and PCA/dimensionality reduction.",
+      "domain": "Computer Vision",
+      "tags": [
+        "face",
+        "recognition",
+        "image",
+        "classification",
+        "pca",
+        "dimensionality reduction",
+        "vision"
+      ],
+      "features_description": "4096 features: pixel values of 64x64 grayscale face images",
+      "target": "target",
+      "target_type": "multiclass (40 subjects)",
+      "size": "400 rows x 4096 features",
+      "difficulty": [
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "seaborn-titanic",
+      "name": "Titanic Survival",
+      "source": "seaborn",
+      "load_function": "load_dataset('titanic')",
+      "load_code": "import seaborn as sns\nimport pandas as pd\ndf = sns.load_dataset('titanic')\nprint(df.shape)\nprint(df.head())\nprint(df.isnull().sum())",
+      "description": "891 Titanic passengers with demographic and ticket information. Binary classification to predict survival. Contains missing values making it ideal for preprocessing practice.",
+      "domain": "Transportation",
+      "tags": [
+        "titanic",
+        "survival",
+        "classification",
+        "binary",
+        "missing values",
+        "feature engineering",
+        "demographics"
+      ],
+      "features_description": "Features: survived, pclass, sex, age, sibsp, parch, fare, embarked, class, who, adult_male, deck, embark_town, alive, alone",
+      "target": "survived",
+      "target_type": "binary (0: died, 1: survived)",
+      "size": "891 rows x 15 features",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "seaborn-tips",
+      "name": "Restaurant Tips",
+      "source": "seaborn",
+      "load_function": "load_dataset('tips')",
+      "load_code": "import seaborn as sns\nimport pandas as pd\ndf = sns.load_dataset('tips')\nprint(df.shape)\nprint(df.head())",
+      "description": "244 restaurant bill records with tip amounts. Features include total bill, tip, gender, smoker status, day, time, party size. Regression and analysis tasks.",
+      "domain": "Hospitality",
+      "tags": [
+        "tips",
+        "restaurant",
+        "regression",
+        "eda",
+        "service",
+        "hospitality",
+        "analysis"
+      ],
+      "features_description": "Features: total_bill, tip, sex, smoker, day, time, size",
+      "target": "tip",
+      "target_type": "continuous (tip amount in dollars)",
+      "size": "244 rows x 7 features",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "seaborn-diamonds",
+      "name": "Diamond Prices",
+      "source": "seaborn",
+      "load_function": "load_dataset('diamonds')",
+      "load_code": "import seaborn as sns\nimport pandas as pd\ndf = sns.load_dataset('diamonds')\nprint(df.shape)\nprint(df.head())",
+      "description": "53940 diamond records with physical and quality attributes. Regression to predict price. Large dataset with categorical ordinal features.",
+      "domain": "Retail",
+      "tags": [
+        "diamonds",
+        "price",
+        "regression",
+        "retail",
+        "luxury",
+        "prediction",
+        "large dataset"
+      ],
+      "features_description": "Features: carat, cut, color, clarity, depth, table, price, x, y, z",
+      "target": "price",
+      "target_type": "continuous (price in USD)",
+      "size": "53940 rows x 10 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "seaborn-penguins",
+      "name": "Palmer Penguins",
+      "source": "seaborn",
+      "load_function": "load_dataset('penguins')",
+      "load_code": "import seaborn as sns\nimport pandas as pd\ndf = sns.load_dataset('penguins')\nprint(df.shape)\nprint(df.head())\nprint(df.isnull().sum())",
+      "description": "344 penguin records from 3 species in Antarctica. Alternative to iris dataset. Contains missing values and both numerical and categorical features.",
+      "domain": "Biology",
+      "tags": [
+        "penguins",
+        "classification",
+        "multiclass",
+        "biology",
+        "species",
+        "missing values",
+        "antarctica"
+      ],
+      "features_description": "Features: species, island, bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g, sex",
+      "target": "species",
+      "target_type": "multiclass (Adelie, Chinstrap, Gentoo)",
+      "size": "344 rows x 7 features",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "seaborn-flights",
+      "name": "Airline Passenger Traffic",
+      "source": "seaborn",
+      "load_function": "load_dataset('flights')",
+      "load_code": "import seaborn as sns\nimport pandas as pd\ndf = sns.load_dataset('flights')\nprint(df.shape)\nprint(df.head())",
+      "description": "144 monthly airline passenger counts from 1949-1960. Classic time series dataset showing trend and seasonality. Used for forecasting and decomposition.",
+      "domain": "Transportation",
+      "tags": [
+        "flights",
+        "time series",
+        "forecasting",
+        "seasonality",
+        "trend",
+        "airline",
+        "passengers"
+      ],
+      "features_description": "Features: year, month, passengers",
+      "target": "passengers",
+      "target_type": "continuous (monthly passenger count)",
+      "size": "144 rows x 3 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "seaborn-mpg",
+      "name": "Auto MPG Fuel Efficiency",
+      "source": "seaborn",
+      "load_function": "load_dataset('mpg')",
+      "load_code": "import seaborn as sns\nimport pandas as pd\ndf = sns.load_dataset('mpg')\nprint(df.shape)\nprint(df.head())\nprint(df.isnull().sum())",
+      "description": "398 automobile records from 1970-1982. Regression to predict fuel efficiency (mpg). Contains missing values and both numerical and categorical features.",
+      "domain": "Automotive",
+      "tags": [
+        "mpg",
+        "fuel",
+        "regression",
+        "automotive",
+        "cars",
+        "efficiency",
+        "prediction"
+      ],
+      "features_description": "Features: mpg, cylinders, displacement, horsepower, weight, acceleration, model_year, origin, name",
+      "target": "mpg",
+      "target_type": "continuous (miles per gallon)",
+      "size": "398 rows x 9 features",
+      "difficulty": [
+        "Easy",
+        "Medium"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "statsmodels-sunspots",
+      "name": "Sunspot Activity",
+      "source": "statsmodels",
+      "load_function": "datasets.sunspots.load_pandas()",
+      "load_code": "import statsmodels.api as sm\nimport pandas as pd\ndata = sm.datasets.sunspots.load_pandas()\ndf = data.data\nprint(df.shape)\nprint(df.head())",
+      "description": "Annual sunspot counts from 1700-2008. Classic univariate time series with approximately 11-year cycles. Used for ARIMA, forecasting, and periodicity analysis.",
+      "domain": "Astronomy",
+      "tags": [
+        "sunspots",
+        "time series",
+        "arima",
+        "forecasting",
+        "astronomy",
+        "periodicity",
+        "univariate"
+      ],
+      "features_description": "Features: YEAR, SUNACTIVITY",
+      "target": "SUNACTIVITY",
+      "target_type": "continuous (annual sunspot count)",
+      "size": "309 rows x 2 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "statsmodels-macrodata",
+      "name": "US Macroeconomic Data",
+      "source": "statsmodels",
+      "load_function": "datasets.macrodata.load_pandas()",
+      "load_code": "import statsmodels.api as sm\nimport pandas as pd\ndata = sm.datasets.macrodata.load_pandas()\ndf = data.data\nprint(df.shape)\nprint(df.head())",
+      "description": "US quarterly macroeconomic data from 1959-2009. 202 quarters with GDP, inflation, unemployment and other indicators. Used for econometric analysis and forecasting.",
+      "domain": "Economics",
+      "tags": [
+        "macroeconomics",
+        "time series",
+        "gdp",
+        "inflation",
+        "unemployment",
+        "economics",
+        "forecasting"
+      ],
+      "features_description": "Features: year, quarter, realgdp, realcons, realinv, realgovt, realdpi, cpi, m1, tbilrate, unemp, pop, infl, realint",
+      "target": "realgdp",
+      "target_type": "continuous (real GDP)",
+      "size": "202 rows x 14 features",
+      "difficulty": [
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "statsmodels-longley",
+      "name": "Longley Economic Regression",
+      "source": "statsmodels",
+      "load_function": "datasets.longley.load_pandas()",
+      "load_code": "import statsmodels.api as sm\nimport pandas as pd\ndata = sm.datasets.longley.load_pandas()\ndf = data.data\nprint(df.shape)\nprint(df.head())",
+      "description": "US economic dataset from 1947-1962 used to test multicollinearity in regression. 16 observations with 6 highly correlated economic variables.",
+      "domain": "Economics",
+      "tags": [
+        "regression",
+        "multicollinearity",
+        "economics",
+        "employment",
+        "small dataset",
+        "statsmodels"
+      ],
+      "features_description": "Features: TOTEMP, GNPDEFL, GNP, UNEMP, ARMED, POP, YEAR",
+      "target": "TOTEMP",
+      "target_type": "continuous (total employment)",
+      "size": "16 rows x 7 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "statsmodels-nile",
+      "name": "Nile River Flow",
+      "source": "statsmodels",
+      "load_function": "datasets.nile.load_pandas()",
+      "load_code": "import statsmodels.api as sm\nimport pandas as pd\ndata = sm.datasets.nile.load_pandas()\ndf = data.data\nprint(df.shape)\nprint(df.head())",
+      "description": "Annual Nile river flow at Aswan from 1871-1970. 100 observations. Classic structural break detection dataset with changepoint around 1899.",
+      "domain": "Environmental",
+      "tags": [
+        "nile",
+        "time series",
+        "structural break",
+        "changepoint",
+        "environmental",
+        "river",
+        "water"
+      ],
+      "features_description": "Features: year, volume (annual flow in 10^8 m^3)",
+      "target": "volume",
+      "target_type": "continuous (annual flow volume)",
+      "size": "100 rows x 2 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "keras-mnist",
+      "name": "MNIST Handwritten Digits",
+      "source": "keras",
+      "load_function": "mnist.load_data()",
+      "load_code": "from tensorflow.keras.datasets import mnist\nimport numpy as np\n(X_train, y_train), (X_test, y_test) = mnist.load_data()\nX_train = X_train.reshape(-1, 28*28) / 255.0\nX_test = X_test.reshape(-1, 28*28) / 255.0\nprint(f'Train: {X_train.shape}, Test: {X_test.shape}')",
+      "description": "70000 grayscale 28x28 images of handwritten digits 0-9. 60k train, 10k test. Benchmark deep learning dataset for image classification.",
+      "domain": "Computer Vision",
+      "tags": [
+        "mnist",
+        "image",
+        "deep learning",
+        "cnn",
+        "classification",
+        "multiclass",
+        "digits",
+        "neural network"
+      ],
+      "features_description": "784 features (28x28 pixels, values 0-255) per image",
+      "target": "label",
+      "target_type": "multiclass (0-9)",
+      "size": "70000 rows x 784 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "keras-fashion-mnist",
+      "name": "Fashion MNIST",
+      "source": "keras",
+      "load_function": "fashion_mnist.load_data()",
+      "load_code": "from tensorflow.keras.datasets import fashion_mnist\nimport numpy as np\n(X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()\nX_train = X_train.reshape(-1, 28*28) / 255.0\nX_test = X_test.reshape(-1, 28*28) / 255.0\nclass_names = ['T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Boot']\nprint(f'Train: {X_train.shape}, Test: {X_test.shape}')",
+      "description": "70000 grayscale 28x28 images of fashion items in 10 categories. Drop-in replacement for MNIST. More challenging than digit recognition.",
+      "domain": "Computer Vision",
+      "tags": [
+        "fashion",
+        "image",
+        "deep learning",
+        "cnn",
+        "classification",
+        "clothing",
+        "neural network",
+        "retail"
+      ],
+      "features_description": "784 features (28x28 pixels) per image, 10 clothing categories",
+      "target": "label",
+      "target_type": "multiclass (10 clothing categories)",
+      "size": "70000 rows x 784 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "keras-cifar10",
+      "name": "CIFAR-10 Object Recognition",
+      "source": "keras",
+      "load_function": "cifar10.load_data()",
+      "load_code": "from tensorflow.keras.datasets import cifar10\nimport numpy as np\n(X_train, y_train), (X_test, y_test) = cifar10.load_data()\nX_train = X_train.astype('float32') / 255.0\nX_test = X_test.astype('float32') / 255.0\nclass_names = ['airplane','automobile','bird','cat','deer','dog','frog','horse','ship','truck']\nprint(f'Train: {X_train.shape}, Test: {X_test.shape}')",
+      "description": "60000 color 32x32 images in 10 object classes. 50k train, 10k test. Benchmark CNN dataset requiring deeper architectures than MNIST.",
+      "domain": "Computer Vision",
+      "tags": [
+        "cifar10",
+        "image",
+        "deep learning",
+        "cnn",
+        "classification",
+        "objects",
+        "color",
+        "neural network"
+      ],
+      "features_description": "3072 features (32x32x3 RGB pixels) per image, 10 object classes",
+      "target": "label",
+      "target_type": "multiclass (10 classes)",
+      "size": "60000 rows x 3072 features",
+      "difficulty": [
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "keras-cifar100",
+      "name": "CIFAR-100 Fine-Grained Recognition",
+      "source": "keras",
+      "load_function": "cifar100.load_data()",
+      "load_code": "from tensorflow.keras.datasets import cifar100\nimport numpy as np\n(X_train, y_train), (X_test, y_test) = cifar100.load_data()\nX_train = X_train.astype('float32') / 255.0\nX_test = X_test.astype('float32') / 255.0\nprint(f'Train: {X_train.shape}, Test: {X_test.shape}')",
+      "description": "60000 color 32x32 images in 100 fine-grained classes organized in 20 superclasses. More challenging than CIFAR-10 requiring transfer learning.",
+      "domain": "Computer Vision",
+      "tags": [
+        "cifar100",
+        "image",
+        "deep learning",
+        "cnn",
+        "classification",
+        "fine-grained",
+        "transfer learning"
+      ],
+      "features_description": "3072 features (32x32x3 RGB pixels) per image, 100 fine-grained classes",
+      "target": "label",
+      "target_type": "multiclass (100 classes)",
+      "size": "60000 rows x 3072 features",
+      "difficulty": [
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "keras-imdb",
+      "name": "IMDB Movie Reviews Sentiment",
+      "source": "keras",
+      "load_function": "imdb.load_data()",
+      "load_code": "from tensorflow.keras.datasets import imdb\nfrom tensorflow.keras.preprocessing.sequence import pad_sequences\n(X_train, y_train), (X_test, y_test) = imdb.load_data(num_words=10000)\nX_train = pad_sequences(X_train, maxlen=200)\nX_test = pad_sequences(X_test, maxlen=200)\nprint(f'Train: {X_train.shape}, Test: {X_test.shape}')",
+      "description": "50000 IMDB movie reviews labeled as positive or negative. 25k train, 25k test. Classic NLP sentiment analysis dataset for RNN/LSTM/transformer models.",
+      "domain": "NLP",
+      "tags": [
+        "imdb",
+        "sentiment",
+        "nlp",
+        "classification",
+        "binary",
+        "reviews",
+        "lstm",
+        "rnn",
+        "text"
+      ],
+      "features_description": "Integer sequences (word indices from vocabulary of 88k words)",
+      "target": "sentiment",
+      "target_type": "binary (0: negative, 1: positive)",
+      "size": "50000 rows x variable sequence length",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "keras-reuters",
+      "name": "Reuters News Topics",
+      "source": "keras",
+      "load_function": "reuters.load_data()",
+      "load_code": "from tensorflow.keras.datasets import reuters\nfrom tensorflow.keras.preprocessing.sequence import pad_sequences\n(X_train, y_train), (X_test, y_test) = reuters.load_data(num_words=10000)\nX_train = pad_sequences(X_train, maxlen=200)\nX_test = pad_sequences(X_test, maxlen=200)\nprint(f'Train: {X_train.shape}, Test: {X_test.shape}')",
+      "description": "11228 Reuters newswire articles categorized into 46 topics. Multiclass NLP classification dataset for topic modeling and text classification.",
+      "domain": "NLP",
+      "tags": [
+        "reuters",
+        "news",
+        "nlp",
+        "classification",
+        "multiclass",
+        "topic",
+        "text",
+        "categories"
+      ],
+      "features_description": "Integer sequences (word indices) from Reuters newswires",
+      "target": "topic",
+      "target_type": "multiclass (46 topic categories)",
+      "size": "11228 rows x variable sequence length",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "nltk-movie-reviews",
+      "name": "Movie Reviews Sentiment (NLTK)",
+      "source": "nltk",
+      "load_function": "movie_reviews",
+      "load_code": "import nltk\nnltk.download('movie_reviews')\nfrom nltk.corpus import movie_reviews\nimport pandas as pd\ndocs = [(list(movie_reviews.words(fileid)), category)\n        for category in movie_reviews.categories()\n        for fileid in movie_reviews.fileids(category)]\ndf = pd.DataFrame(docs, columns=['words', 'sentiment'])\nprint(df.shape)\nprint(df.head())",
+      "description": "2000 movie reviews labeled as positive or negative. Classic NLP dataset from Cornell. Used for text classification and sentiment analysis with traditional ML methods.",
+      "domain": "NLP",
+      "tags": [
+        "sentiment",
+        "movie",
+        "nlp",
+        "classification",
+        "binary",
+        "text",
+        "reviews",
+        "nltk"
+      ],
+      "features_description": "Raw tokenized text reviews, positive and negative categories",
+      "target": "sentiment",
+      "target_type": "binary (pos, neg)",
+      "size": "2000 reviews",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "nltk-reuters",
+      "name": "Reuters Corpus (NLTK)",
+      "source": "nltk",
+      "load_function": "reuters corpus",
+      "load_code": "import nltk\nnltk.download('reuters')\nfrom nltk.corpus import reuters\nimport pandas as pd\ndocs = [(reuters.raw(fileid), reuters.categories(fileid)[0])\n        for fileid in reuters.fileids()\n        if len(reuters.categories(fileid)) == 1]\ndf = pd.DataFrame(docs, columns=['text', 'category'])\nprint(df.shape)\nprint(df.head())",
+      "description": "10788 Reuters news documents from 1987 in 90 categories. Used for multi-label text classification and information retrieval research.",
+      "domain": "NLP",
+      "tags": [
+        "reuters",
+        "news",
+        "nlp",
+        "classification",
+        "multi-label",
+        "text",
+        "categories",
+        "nltk"
+      ],
+      "features_description": "Raw text news articles with single or multiple category labels",
+      "target": "category",
+      "target_type": "multiclass/multi-label (90 categories)",
+      "size": "10788 documents",
+      "difficulty": [
+        "Hard"
+      ],
+      "direct_load": true
+    },
+    {
+      "id": "huggingface-emotion",
+      "name": "Emotion Text Classification",
+      "source": "huggingface",
+      "link": "https://huggingface.co/datasets/dair-ai/emotion",
+      "load_code": "from datasets import load_dataset\nimport pandas as pd\nds = load_dataset(\"dair-ai/emotion\", \"split\")\ndf_train = ds[\"train\"].to_pandas()\ndf_test = ds[\"test\"].to_pandas()\ndf = pd.concat([df_train, df_test], ignore_index=True)\nprint(df.shape)\nprint(df.head())\nprint(df[\"label\"].value_counts())",
+      "description": "20000 English Twitter messages labeled with 6 emotions: sadness, joy, love, anger, fear, surprise. Multiclass text classification for emotion detection.",
+      "domain": "NLP",
+      "tags": [
+        "emotion",
+        "sentiment",
+        "nlp",
+        "classification",
+        "multiclass",
+        "twitter",
+        "text",
+        "social media"
+      ],
+      "features_description": "Features: text (tweet), label (emotion category 0-5)",
+      "target": "label",
+      "target_type": "multiclass (0:sadness, 1:joy, 2:love, 3:anger, 4:fear, 5:surprise)",
+      "size": "20000 rows x 2 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true,
+      "load_command": "load_dataset(\"dair-ai/emotion\", \"split\")"
+    },
+    {
+      "id": "huggingface-ag-news",
+      "name": "AG News Topic Classification",
+      "source": "huggingface",
+      "link": "https://huggingface.co/datasets/ag_news",
+      "load_code": "from datasets import load_dataset\nimport pandas as pd\nds = load_dataset(\"ag_news\")\ndf_train = ds[\"train\"].to_pandas()\ndf_test = ds[\"test\"].to_pandas()\ndf = pd.concat([df_train, df_test], ignore_index=True)\nprint(df.shape)\nprint(df.head())\nprint(df[\"label\"].value_counts())",
+      "description": "120000 news articles from 4 categories: World, Sports, Business, Sci/Tech. Used for topic classification, text representation, and transformer fine-tuning benchmarks.",
+      "domain": "NLP",
+      "tags": [
+        "news",
+        "topic",
+        "nlp",
+        "classification",
+        "multiclass",
+        "text",
+        "bert",
+        "transformer"
+      ],
+      "features_description": "Features: text (news article), label (topic category 0-3)",
+      "target": "label",
+      "target_type": "multiclass (0:World, 1:Sports, 2:Business, 3:Sci/Tech)",
+      "size": "120000 rows x 2 features",
+      "difficulty": [
+        "Medium",
+        "Hard"
+      ],
+      "direct_load": true,
+      "load_command": "load_dataset(\"ag_news\")"
+    }
+  ]

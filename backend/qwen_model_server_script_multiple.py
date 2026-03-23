@@ -2713,7 +2713,7 @@ def build_aiml_prompt(request_data):
 Generate a {request_data['difficulty']} difficulty AI/ML problem about: {request_data['topic']}
 
 RULES:
-- Choose feature names SPECIFIC and REALISTIC for this topic (6-12 features).
+- Choose feature names SPECIFIC and REALISTIC for this topic (10-15 features).
   Do NOT use generic names like "feature1", "feature2".
   Example — customer churn: monthly_bill, tenure_months, num_complaints, contract_type
   Example — house prices: sqft_living, num_bedrooms, num_bathrooms, zip_code, year_built
@@ -2734,7 +2734,7 @@ Return ONLY this JSON (no data array):
   "problemStatement": "Detailed real-world problem description for this specific topic",
   "dataset": {{
     "description": "What this dataset represents in real business/research context",
-    "features": ["realistic_name_1", "realistic_name_2", "...6-12 names"],
+    "features": ["realistic_name_1", "realistic_name_2", "...10-15 names"],
     "feature_types": {{
       "realistic_name_1": "numerical (continuous, range: 20 to 150)",
       "realistic_name_2": "categorical (values: monthly, annual, weekly)"
@@ -3304,7 +3304,7 @@ async def generate_aiml(request: AIMLGenerationRequest):
 
                 # ── Pass 2: Python generates dataset rows from schema ──────────
                 difficulty = item_data.get("difficulty", "Medium").lower()
-                num_rows = {"easy": 100, "medium": 150, "hard": 200}.get(difficulty, 150)
+                num_rows = {"easy": 300, "medium": 400, "hard": 500}.get(difficulty, 400)
 
                 try:
                     dataset_schema = result.get("dataset", {})
@@ -3474,8 +3474,8 @@ def _parse_input_output(input_output: list) -> tuple:
     all_cases = []
 
     for item in input_output:
-        raw_input  = item.get("input", "").strip()
-        raw_output = item.get("output", "").strip()
+        raw_input  = (item.get("input") or "").strip()
+        raw_output = (item.get("output") or "").strip()
 
         if not raw_input or not raw_output:
             continue
@@ -3668,16 +3668,22 @@ async def enrich_dsa(problem: dict = Body(...)):
 
 
 # ============================================================================
-# DSA QUESTION GENERATION ENDPOINT
-# Filters dsa_enriched.json by difficulty + topic/concepts keyword match,
-# picks one randomly, rewrites only the problem wording via Qwen,
-# returns reworded question + original test cases + requested languages only.
+# DSA QUESTION GENERATION ENDPOINT — FAISS RAG
+# Uses FAISS vector search to find semantically similar problems.
+# Falls back to keyword matching if FAISS index not available.
 # ============================================================================
 
 import os as _os
+import numpy as _np
 
-_DSA_ENRICHED_PATH = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\dsa-coding\dsa_enriched.json"
-_dsa_enriched_cache = None
+_DSA_ENRICHED_PATH = "/app/assests/dsa-coding/dsa_enriched.json"
+_DSA_FAISS_PATH    = "/app/assests/dsa-coding/dsa_faiss.index"
+_DSA_METADATA_PATH = "/app/assests/dsa-coding/dsa_metadata.json"
+
+_dsa_enriched_cache  = None
+_dsa_faiss_index     = None
+_dsa_metadata_cache  = None
+_dsa_embed_model     = None
 
 
 def _load_dsa_enriched():
@@ -3691,7 +3697,70 @@ def _load_dsa_enriched():
     return _dsa_enriched_cache
 
 
-def _filter_dsa_problems(problems: list, difficulty: str, topic: str, concepts: list) -> list:
+def _load_faiss_index():
+    global _dsa_faiss_index, _dsa_metadata_cache, _dsa_embed_model
+    if _dsa_faiss_index is None:
+        if not _os.path.exists(_DSA_FAISS_PATH):
+            logger.warning("FAISS index not found — falling back to keyword matching")
+            return False
+        try:
+            import faiss
+            from sentence_transformers import SentenceTransformer
+
+            logger.info("Loading FAISS index...")
+            _dsa_faiss_index = faiss.read_index(_DSA_FAISS_PATH)
+
+            logger.info("Loading metadata...")
+            with open(_DSA_METADATA_PATH, encoding="utf-8") as f:
+                _dsa_metadata_cache = json.load(f)
+
+            logger.info("Loading embedding model...")
+            _dsa_embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+            logger.info(f"FAISS ready: {_dsa_faiss_index.ntotal} vectors")
+            return True
+        except Exception as e:
+            logger.warning(f"FAISS load failed: {e} — falling back to keyword matching")
+            return False
+    return True
+
+
+def _faiss_search(query: str, difficulty: str, top_k: int = 20) -> list:
+    """
+    Searches FAISS index for semantically similar problems.
+    Filters by difficulty after search.
+    Returns list of matching problems from enriched dataset.
+    """
+    problems = _load_dsa_enriched()
+
+    # Embed the query
+    query_vec = _dsa_embed_model.encode(
+        [query],
+        convert_to_numpy=True,
+        normalize_embeddings=True
+    ).astype(_np.float32)
+
+    # Search FAISS — get top_k*3 to allow for difficulty filtering
+    scores, indices = _dsa_faiss_index.search(query_vec, top_k * 3)
+
+    matched = []
+    for idx in indices[0]:
+        if idx < 0 or idx >= len(_dsa_metadata_cache):
+            continue
+        meta = _dsa_metadata_cache[idx]
+        if meta.get("difficulty", "").lower() != difficulty.lower():
+            continue
+        # Get full problem from enriched dataset
+        if idx < len(problems):
+            matched.append(problems[idx])
+        if len(matched) >= top_k:
+            break
+
+    return matched
+
+
+def _keyword_filter(problems: list, difficulty: str, topic: str, concepts: list) -> list:
+    """Fallback keyword matching when FAISS is not available."""
     difficulty_lower = difficulty.lower()
     keywords = [topic.lower()] + [c.lower() for c in concepts]
 
@@ -3699,7 +3768,6 @@ def _filter_dsa_problems(problems: list, difficulty: str, topic: str, concepts: 
     for p in problems:
         if p.get("difficulty", "").lower() != difficulty_lower:
             continue
-        # Search across title, description, problem_description, tags, topics
         searchable = " ".join([
             p.get("title", ""),
             p.get("task_id", ""),
@@ -3708,7 +3776,6 @@ def _filter_dsa_problems(problems: list, difficulty: str, topic: str, concepts: 
             " ".join(p.get("tags", [])),
             " ".join(p.get("topics", [])),
         ]).lower()
-
         if any(kw in searchable for kw in keywords):
             matched.append(p)
 
@@ -3755,34 +3822,33 @@ class DSAQuestionRequest(BaseModel):
 @app.post("/api/v1/generate-dsa-question")
 async def generate_dsa_question(request: DSAQuestionRequest):
     """
-    Filters dsa_enriched.json by difficulty + topic/concepts keyword match.
-    Randomly picks one matched problem.
-    Rewrites only the problem wording using Qwen.
-    Returns reworded question + original test cases + requested languages only.
+    FAISS RAG-powered DSA question generation.
+    Uses semantic search to find relevant problems.
+    Falls back to keyword matching if FAISS unavailable.
+    Rewrites problem wording using Qwen.
     """
-    try:
-        problems = _load_dsa_enriched()
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    problems = _load_dsa_enriched()
 
-    # Filter by difficulty + topic/concepts
-    matched = _filter_dsa_problems(
-        problems,
-        request.difficulty,
-        request.topic,
-        request.concepts
-    )
+    # Build search query from topic + concepts
+    query = f"{request.topic} {' '.join(request.concepts)} {request.difficulty}"
 
+    # Try FAISS search first
+    faiss_available = _load_faiss_index()
+
+    if faiss_available:
+        logger.info(f"Using FAISS search for: {query}")
+        matched = _faiss_search(query, request.difficulty, top_k=20)
+        search_method = "faiss"
+    else:
+        logger.info(f"Using keyword search for: {query}")
+        matched = _keyword_filter(problems, request.difficulty, request.topic, request.concepts)
+        search_method = "keyword"
+
+    # Fallback: difficulty only
     if not matched:
-        # Fallback: filter by difficulty only
-        logger.warning(
-            f"No match for topic='{request.topic}' concepts={request.concepts} "
-            f"difficulty='{request.difficulty}' — falling back to difficulty-only filter"
-        )
-        matched = [
-            p for p in problems
-            if p.get("difficulty", "").lower() == request.difficulty.lower()
-        ]
+        logger.warning(f"No match found — falling back to difficulty only filter")
+        matched = [p for p in problems if p.get("difficulty", "").lower() == request.difficulty.lower()]
+        search_method = "difficulty_only"
 
     if not matched:
         raise HTTPException(
@@ -3790,9 +3856,12 @@ async def generate_dsa_question(request: DSAQuestionRequest):
             detail=f"No problems found for difficulty='{request.difficulty}'"
         )
 
-    # Random pick
+    # Random pick from top matches
     selected = random.choice(matched)
-    logger.info(f"DSA question selected: '{selected.get('title', selected.get('task_id'))}' ({selected.get('difficulty')})")
+    logger.info(
+        f"Selected: '{selected.get('title', selected.get('task_id'))}' "
+        f"({selected.get('difficulty')}) via {search_method}"
+    )
 
     # Reword using Qwen
     prompt = _build_reword_prompt(selected)
@@ -3827,7 +3896,7 @@ async def generate_dsa_question(request: DSAQuestionRequest):
         }
 
     # Filter starter_code to requested languages only
-    all_starter_code = selected.get("starter_code", {})
+    all_starter_code = selected.get("starter_code_langs", selected.get("starter_code", {}))
     if request.languages:
         filtered_starter_code = {
             lang: code
@@ -3847,6 +3916,7 @@ async def generate_dsa_question(request: DSAQuestionRequest):
         "starter_code":       filtered_starter_code,
         "difficulty":         selected.get("difficulty", request.difficulty),
         "tags":               selected.get("tags", selected.get("topics", [])),
+        "search_method":      search_method,
         "ai_generated":       True,
         "reworded":           True
     }
@@ -3854,7 +3924,377 @@ async def generate_dsa_question(request: DSAQuestionRequest):
 
 
 
+
+# ============================================================================
+# AIML LIBRARY DATASET ENDPOINT v1.0
+# Uses real datasets from sklearn/seaborn/statsmodels/keras/nltk/huggingface.
+# Catalog: aiml_dataset_catalog.json (33 datasets, all direct load)
+# Flow:
+#   1. Match topic + concepts against catalog tags/domain
+#   2. Pick best matching dataset
+#   3. Qwen generates question around that real dataset
+#   4. Return load_code baked into starter_code["python3"]
+#   5. No data stored in DB — student loads directly in notebook
+# ============================================================================
+
+# ── AIML catalog paths ───────────────────────────────────────────────────────
+_AIML_CATALOG_PATH   = "/app/assests/aiml-data/aiml_dataset_catalog.json"
+_AIML_FAISS_PATH     = "/app/assests/aiml-data/aiml_faiss.index"
+_AIML_METADATA_PATH  = "/app/assests/aiml-data/aiml_catalog_metadata.json"
+
+_aiml_catalog_cache  = None
+_aiml_faiss_index    = None
+_aiml_meta_cache     = None
+_aiml_embed_model    = None
+
+
+def _load_aiml_catalog() -> list:
+    global _aiml_catalog_cache
+    if _aiml_catalog_cache is None:
+        if not os.path.exists(_AIML_CATALOG_PATH):
+            logger.warning(f"AIML catalog not found at {_AIML_CATALOG_PATH}")
+            return []
+        with open(_AIML_CATALOG_PATH, encoding="utf-8") as f:
+            _aiml_catalog_cache = json.load(f)
+        logger.info(f"Loaded {len(_aiml_catalog_cache)} datasets from AIML catalog")
+    return _aiml_catalog_cache
+
+
+def _load_aiml_faiss() -> bool:
+    """
+    Loads AIML FAISS index + metadata + embedding model.
+    Returns True if successful, False if index not available.
+    Falls back to keyword matching when False.
+    """
+    global _aiml_faiss_index, _aiml_meta_cache, _aiml_embed_model
+    if _aiml_faiss_index is not None:
+        return True
+    if not os.path.exists(_AIML_FAISS_PATH):
+        logger.warning("AIML FAISS index not found — falling back to keyword matching")
+        return False
+    try:
+        import faiss as _faiss
+        from sentence_transformers import SentenceTransformer as _ST
+        logger.info("Loading AIML FAISS index...")
+        _aiml_faiss_index = _faiss.read_index(_AIML_FAISS_PATH)
+        with open(_AIML_METADATA_PATH, encoding="utf-8") as f:
+            _aiml_meta_cache = json.load(f)
+        # Reuse DSA embed model if already loaded — same model
+        if _dsa_embed_model is not None:
+            _aiml_embed_model = _dsa_embed_model
+        else:
+            logger.info("Loading AIML embedding model...")
+            _aiml_embed_model = _ST("all-MiniLM-L6-v2")
+        logger.info(f"AIML FAISS ready: {_aiml_faiss_index.ntotal} vectors")
+        return True
+    except Exception as e:
+        logger.warning(f"AIML FAISS load failed: {e} — falling back to keyword matching")
+        return False
+
+
+def _match_dataset(topic: str, concepts: list, difficulty: str):
+    """
+    Production-grade dataset matching using FAISS semantic search.
+    Falls back to keyword matching if FAISS index not available.
+
+    FAISS path:
+      - Embeds topic + concepts into vector
+      - Searches top-K semantically similar datasets
+      - Filters by difficulty
+      - Returns best match
+
+    Keyword fallback:
+      - Scores datasets by tag/domain word overlap
+      - Returns best match if score >= 3
+    """
+    catalog = _load_aiml_catalog()
+    if not catalog:
+        return None
+
+    difficulty_lower = difficulty.lower()
+
+    # ── FAISS semantic search ─────────────────────────────────────────────────
+    faiss_available = _load_aiml_faiss()
+
+    if faiss_available:
+        try:
+            query = f"{topic} {' '.join(concepts)} {difficulty}"
+            query_vec = _aiml_embed_model.encode(
+                [query],
+                convert_to_numpy=True,
+                normalize_embeddings=True
+            ).astype(np.float32)
+
+            # Search top 20 — filter by difficulty after
+            scores, indices = _aiml_faiss_index.search(query_vec, min(20, _aiml_faiss_index.ntotal))
+
+            for idx, score in zip(indices[0], scores[0]):
+                if idx < 0 or idx >= len(_aiml_meta_cache):
+                    continue
+                meta = _aiml_meta_cache[idx]
+                ds_diffs = [d.lower() for d in meta.get("difficulty", [])]
+                # Accept if difficulty matches OR difficulty list is empty
+                if difficulty_lower in ds_diffs or not ds_diffs:
+                    # Get full dataset from catalog
+                    catalog_idx = meta.get("index", idx)
+                    if catalog_idx < len(catalog):
+                        dataset = catalog[catalog_idx]
+                        logger.info(
+                            f"AIML FAISS match: '{dataset['name']}' "
+                            f"(semantic score={score:.3f}, difficulty={difficulty})"
+                        )
+                        return dataset
+
+            logger.info("AIML FAISS: no difficulty-matched result — trying keyword fallback")
+        except Exception as e:
+            logger.warning(f"AIML FAISS search failed: {e} — falling back to keyword")
+
+    # ── Keyword fallback ──────────────────────────────────────────────────────
+    topic_words   = set(topic.lower().split())
+    concept_words = set(" ".join(concepts).lower().split())
+    best_match    = None
+    best_score    = 0
+
+    for dataset in catalog:
+        score    = 0
+        tags     = [t.lower() for t in dataset.get("tags", [])]
+        domain   = dataset.get("domain", "").lower()
+        ds_diffs = [d.lower() for d in dataset.get("difficulty", [])]
+
+        for tag in tags:
+            for word in topic_words:
+                if word in tag or tag in word:
+                    score += 3
+                    break
+
+        for tag in tags:
+            for word in concept_words:
+                if word in tag or tag in word:
+                    score += 2
+                    break
+
+        for word in topic_words | concept_words:
+            if word in domain:
+                score += 1
+
+        if difficulty_lower in ds_diffs:
+            score += 1
+
+        if score > best_score:
+            best_score = score
+            best_match = dataset
+
+    if best_score >= 3:
+        logger.info(f"AIML keyword match: '{best_match['name']}' (score={best_score})")
+        return best_match
+
+    logger.info(f"No dataset match found (keyword score={best_score}) — using synthetic")
+    return None
+
+
+def _build_aiml_library_prompt(request_data: dict, dataset: dict) -> str:
+    topic       = request_data.get("topic", "")
+    difficulty  = request_data.get("difficulty", "Medium")
+    concepts    = request_data.get("concepts", [])
+    concepts_str = ", ".join(concepts) if concepts else "general ML"
+
+    return f"""You are an expert AI/ML assessment designer.
+
+Generate a {difficulty} difficulty AI/ML problem using this REAL dataset.
+
+DATASET INFORMATION:
+Name: {dataset.get('name', '')}
+Source: {dataset.get('source', '')}
+Domain: {dataset.get('domain', '')}
+Description: {dataset.get('description', '')}
+Features: {dataset.get('features_description', '')}
+Target: {dataset.get('target', '')}
+Target type: {dataset.get('target_type', '')}
+Size: {dataset.get('size', '')}
+
+ASSESSMENT TOPIC: {topic}
+CONCEPTS TO TEST: {concepts_str}
+DIFFICULTY: {difficulty}
+
+RULES:
+- Write a realistic real-world problem statement around THIS specific dataset.
+- Tasks must reference the ACTUAL feature names from this dataset.
+- Do NOT suggest loading a different dataset.
+- Do NOT generate synthetic data.
+- expectedApproach must suggest algorithms appropriate for this dataset target type.
+- evaluationCriteria must match the target type (classification vs regression metrics).
+- ALL fields are REQUIRED.
+
+Return ONLY this JSON:
+{{
+  "problemStatement": "Detailed real-world problem description grounded in the actual dataset domain",
+  "tasks": [
+    "Task 1: Data Loading and Exploration — load the dataset, display shape, first 10 rows, data types, missing values, and summary statistics.",
+    "Task 2: Data Preprocessing — handle missing values, encode categorical features, normalize numerical features, split 80/20 train/test.",
+    "Task 3: Exploratory Data Analysis — visualize target distribution, feature correlations, and key feature vs target plots.",
+    "Task 4: Model Training — train at least 2 ML models appropriate for this problem, evaluate with relevant metrics.",
+    "Task 5: Model Comparison and Insights — compare models, identify important features, provide business recommendations."
+  ],
+  "preprocessing_requirements": [
+    "Specific step 1 for THIS dataset",
+    "Specific step 2 for THIS dataset",
+    "Specific step 3 for THIS dataset"
+  ],
+  "expectedApproach": "2-3 specific ML algorithms suited for this exact dataset with reasoning.",
+  "evaluationCriteria": ["metric1", "metric2", "metric3"],
+  "difficulty": "{difficulty}",
+  "bloomLevel": "Apply"
+}}
+
+Generate now:"""
+
+
+class AIMLLibraryRequest(BaseModel):
+    topic: str
+    difficulty: str
+    concepts: List[str] = []
+    num_questions: int = 1
+    use_cache: bool = True
+
+
+@app.post("/api/v1/generate-aiml-library")
+async def generate_aiml_library(request: AIMLLibraryRequest):
+    """
+    AIML question generation using real library datasets.
+    Matches topic/concepts to best dataset in aiml_dataset_catalog.json.
+    Returns load_code baked into starter_code for student Jupyter notebook.
+    Falls back to synthetic generation if no dataset match found.
+    """
+    update_stats("aiml")
+    data = request.model_dump()
+
+    job_id = str(uuid.uuid4())
+    JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
+
+    async def _task():
+        JOB_STORE[job_id]["status"] = "processing"
+        try:
+            all_problems  = []
+            any_cache_hit = False
+            total_time    = 0.0
+            num_q = max(1, request.num_questions)
+
+            for i in range(num_q):
+                item_data = {k: v for k, v in data.items() if k != "num_questions"}
+                cache_key = generate_cache_key("aiml_library", {**item_data, "qi": i})
+
+                if request.use_cache:
+                    cached = get_from_cache(cache_key)
+                    if cached:
+                        any_cache_hit = True
+                        all_problems.append(cached)
+                        continue
+
+                matched = _match_dataset(request.topic, request.concepts, request.difficulty)
+
+                if matched:
+                    logger.info(f"Using library dataset: {matched['name']}")
+                    prompt = _build_aiml_library_prompt(item_data, matched)
+
+                    try:
+                        messages = [
+                            {"role": "system", "content": "You are an expert AI/ML assessment designer. Return only valid JSON."},
+                            {"role": "user",   "content": prompt}
+                        ]
+                        text = TOKENIZER.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                        inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
+                        t0 = time.time()
+                        output = MODEL.generate(
+                            **inputs_tok,
+                            max_new_tokens=2000,
+                            temperature=0.6,
+                            do_sample=True,
+                            top_p=0.9,
+                            repetition_penalty=1.1,
+                            pad_token_id=TOKENIZER.eos_token_id
+                        )
+                        gen_time = time.time() - t0
+                        decoded  = TOKENIZER.decode(output[0], skip_special_tokens=True)
+                        decoded  = decoded.split("assistant")[-1].strip()
+                        result   = extract_json(decoded)
+
+                        load_code = matched.get("load_code", "")
+                        starter   = (
+                            f"# Dataset: {matched['name']} ({matched['source']})\n"
+                            f"# Run this cell to load your data\n\n"
+                            f"{load_code}\n\n"
+                            f"# Your solution below\n"
+                        )
+
+                        problem = {
+                            "problemStatement":           result.get("problemStatement", ""),
+                            "tasks":                      result.get("tasks", []),
+                            "preprocessing_requirements": result.get("preprocessing_requirements", []),
+                            "expectedApproach":           result.get("expectedApproach", ""),
+                            "evaluationCriteria":         result.get("evaluationCriteria", []),
+                            "difficulty":                 result.get("difficulty", request.difficulty),
+                            "bloomLevel":                 result.get("bloomLevel", "Apply"),
+                            "dataset": {
+                                "catalog_id":  matched.get("id", ""),
+                                "name":        matched.get("name", ""),
+                                "source":      matched.get("source", ""),
+                                "description": matched.get("description", ""),
+                                "domain":      matched.get("domain", ""),
+                                "size":        matched.get("size", ""),
+                                "target":      matched.get("target", ""),
+                                "target_type": matched.get("target_type", ""),
+                                "load_code":   load_code,
+                                "direct_load": True,
+                                "storage_type": "library",
+                                "file_id":     None,
+                            },
+                            "starter_code":      {"python3": starter},
+                            "dataset_load_code": load_code,
+                            "dataset_strategy":  "library",
+                            "generation_time_seconds": round(gen_time, 3),
+                            "cache_hit": False,
+                        }
+                        save_to_cache(cache_key, problem)
+                        total_time += gen_time
+                        all_problems.append(problem)
+
+                    except Exception as e:
+                        logger.error(f"Library generation failed: {e} — falling back to synthetic")
+                        token_limit = calculate_aiml_token_limit(item_data)
+                        result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
+                        result["dataset_strategy"] = "synthetic_fallback"
+                        save_to_cache(cache_key, result)
+                        total_time += result.get("generation_time_seconds", 0)
+                        all_problems.append(result)
+                else:
+                    logger.info("No catalog match — using synthetic generation")
+                    token_limit = calculate_aiml_token_limit(item_data)
+                    result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
+                    result["dataset_strategy"] = "synthetic"
+                    save_to_cache(cache_key, result)
+                    total_time += result.get("generation_time_seconds", 0)
+                    all_problems.append(result)
+
+            JOB_STORE[job_id] = {
+                "status": "complete",
+                "result": {
+                    "aiml_problems": all_problems,
+                    "generation_time_seconds": round(total_time, 3),
+                    "cache_hit": any_cache_hit,
+                    "batched": True,
+                    "batch_size": request.num_questions,
+                },
+                "error": None,
+            }
+        except Exception as e:
+            STATS["errors"] += 1
+            JOB_STORE[job_id] = {"status": "failed", "result": None, "error": str(e)}
+
+    asyncio.create_task(_task())
+    return {"job_id": job_id, "status": "pending"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=9000)
-# v1.0.1
+# v1.0.2
