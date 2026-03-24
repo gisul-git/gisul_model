@@ -19,6 +19,9 @@ RUN pip3 install --upgrade pip
 COPY backend/requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+# 🔥 ADD THIS LINE
+RUN pip3 install faiss-cpu
+
 COPY backend/qwen_model_server_script_multiple.py /app/qwen_model_server_script_multiple.py
 
 COPY assets/dsa-coding/dsa_enriched.json /app/assets/dsa-coding/dsa_enriched.json
