@@ -40,19 +40,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Login to Docker Hub
-        run: |
-          mkdir -p /tmp/docker-config
-          echo '{"credsStore":""}' > /tmp/docker-config/config.json
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
-          --username "${{ secrets.DOCKERHUB_USERNAME }}" \
-          --password-stdin
         env:
-          DOCKER_CONFIG: /tmp/docker-config
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
 
-      - name: Deploy containers (Zero downtime)
+      - name: Deploy containers
         run: |
+          docker stop qwen-frontend qwen-model watchtower 2>/dev/null || true
+          docker rm -f qwen-frontend qwen-model watchtower 2>/dev/null || true
           cd /mnt/c/Users/adity/documents/gisul/gisul_model
-          docker-compose pull
-          docker-compose up -d --remove-orphans
-        env:
-          DOCKER_CONFIG: /tmp/docker-config
+          docker compose pull
+          docker compose up -d --remove-orphans
