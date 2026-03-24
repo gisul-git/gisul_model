@@ -420,7 +420,7 @@ def extract_json(text: str) -> dict:
 
     start = text.find('{')
     if start == -1:
-        raise ValueError("No JSON object found in response")
+        raise ValueError("No  JSON object found in response")
 
     depth = 0
     end = -1
