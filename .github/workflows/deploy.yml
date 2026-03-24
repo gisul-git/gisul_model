@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest   # ✅ build in GitHub (no local load)
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -34,20 +34,25 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: self-hosted   # ✅ deploy on your machine
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Login to Docker Hub
         run: |
+          mkdir -p /tmp/docker-config
+          echo '{"credsStore":""}' > /tmp/docker-config/config.json
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
           --username "${{ secrets.DOCKERHUB_USERNAME }}" \
           --password-stdin
+        env:
+          DOCKER_CONFIG: /tmp/docker-config
 
       - name: Deploy containers (Zero downtime)
         run: |
           cd /mnt/c/Users/adity/documents/gisul/gisul_model
-
           docker compose pull
           docker compose up -d --remove-orphans
+        env:
+          DOCKER_CONFIG: /tmp/docker-config
