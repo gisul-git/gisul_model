@@ -52,7 +52,7 @@ jobs:
       - name: Deploy containers (Zero downtime)
         run: |
           cd /mnt/c/Users/adity/documents/gisul/gisul_model
-          docker compose pull
-          docker compose up -d --remove-orphans
+          docker-compose pull
+          docker-compose up -d --remove-orphans
         env:
           DOCKER_CONFIG: /tmp/docker-config
