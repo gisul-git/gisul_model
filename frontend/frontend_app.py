@@ -573,7 +573,7 @@ if st.button("🚀 Generate", type="primary", use_container_width=True, disabled
         st.json(payload)
 
     try:
-        resp = requests.post(url, json=payload, timeout=30)
+        resp = requests.post(url, json=payload, timeout=180)
 
         if resp.status_code != 200:
             st.error(f"❌ Server returned HTTP {resp.status_code}")
