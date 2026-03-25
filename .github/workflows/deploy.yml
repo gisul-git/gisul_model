@@ -51,9 +51,12 @@ jobs:
 
       - name: Deploy containers
         run: |
+          # Always sync docker-compose.yml from repo to office machine
+          cp docker-compose.yml /mnt/c/Users/adity/documents/gisul/gisul_model/docker-compose.yml
+
           cd /mnt/c/Users/adity/documents/gisul/gisul_model
 
-          # Force clean existing containers and network
+          # Force remove existing containers and network
           docker rm -f qwen-model qwen-frontend 2>/dev/null || true
           docker network rm gisul_model_default 2>/dev/null || true
 
@@ -62,6 +65,6 @@ jobs:
           docker pull gisul/qwen-frontend:latest
 
           # Start fresh
-          docker compose up -d --remove-orphans
+          docker compose up -d --remove-orphans --force-recreate
         env:
           DOCKER_CONFIG: /tmp/docker-config
