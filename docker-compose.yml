@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   qwen-model:
     image: gisul/qwen-api:latest
@@ -23,6 +22,6 @@ services:
       - '8501:8501'
     environment:
       - API_BASE=http://qwen-model:9000/api/v1
+    depends_on:
+      - qwen-model
     restart: unless-stopped
-
- 

@@ -118,15 +118,19 @@ ENDPOINTS = [
     "generate-coding",
     "generate-sql",
     "generate-aiml",
+    "generate-aiml-library",
+    "generate-dsa-question",
 ]
 
 ENDPOINT_LABELS = {
-    "generate-topics":     "📋 Generate Topics",
-    "generate-mcq":        "✅ Multiple Choice (MCQ)",
-    "generate-subjective": "✍️  Subjective Questions",
-    "generate-coding":     "💻 Coding Problems",
-    "generate-sql":        "🗄️  SQL Problems",
-    "generate-aiml":       "🤖 AI/ML Dataset Problems",
+    "generate-topics":       "📋 Generate Topics",
+    "generate-mcq":          "✅ Multiple Choice (MCQ)",
+    "generate-subjective":   "✍️  Subjective Questions",
+    "generate-coding":       "💻 Coding Problems",
+    "generate-sql":          "🗄️  SQL Problems",
+    "generate-aiml":         "🤖 AI/ML Synthetic Problems",
+    "generate-aiml-library": "📚 AI/ML Library Dataset Problems",
+    "generate-dsa-question": "🔢 DSA Question (FAISS RAG)",
 }
 
 endpoint = st.selectbox(
@@ -141,11 +145,15 @@ st.divider()
 # INPUTS
 # ─────────────────────────────────────────────
 needs_topic_fields  = endpoint in ("generate-mcq", "generate-subjective",
-                                   "generate-coding", "generate-sql", "generate-aiml")
+                                   "generate-coding", "generate-sql",
+                                   "generate-aiml", "generate-aiml-library",
+                                   "generate-dsa-question")
 needs_topics_fields = endpoint == "generate-topics"
 needs_language      = endpoint == "generate-coding"
 needs_db_type       = endpoint == "generate-sql"
 needs_audience      = endpoint in ("generate-mcq", "generate-subjective")
+needs_concepts      = endpoint in ("generate-aiml-library", "generate-dsa-question")
+needs_dsa_languages = endpoint == "generate-dsa-question"
 
 st.subheader("🔧 Request Parameters")
 
@@ -154,7 +162,7 @@ with col1:
     num_questions = st.number_input(
         "Number of Questions / Items",
         min_value=1, max_value=20, value=3,
-        help="How many items to generate in a single request."
+        help="How many items to generate in a single request. (Not applicable for DSA question endpoint)"
     )
 
 if needs_topics_fields:
@@ -170,7 +178,7 @@ if needs_topics_fields:
 if needs_topic_fields:
     col_t1, col_t2 = st.columns(2)
     with col_t1:
-        topic = st.text_input("Topic", "Python list slicing")
+        topic = st.text_input("Topic", "Arrays and Hash Maps" if endpoint == "generate-dsa-question" else "Python list slicing")
     with col_t2:
         difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
 
@@ -194,6 +202,21 @@ if endpoint in ("generate-coding", "generate-sql"):
             index=2,
         )
 
+if needs_concepts:
+    concepts_input = st.text_input(
+        "Concepts (comma separated)",
+        "binary search, two pointers" if endpoint == "generate-dsa-question" else "classification, imbalanced data",
+        help="Concepts to match against the dataset catalog using semantic search"
+    )
+
+if needs_dsa_languages:
+    dsa_languages = st.multiselect(
+        "Starter Code Languages",
+        ["python", "java", "javascript", "typescript", "kotlin", "go", "rust", "cpp", "csharp", "c"],
+        default=["python", "java", "javascript"],
+        help="Which languages to include in starter code"
+    )
+
 st.divider()
 
 # ─────────────────────────────────────────────
@@ -201,6 +224,7 @@ st.divider()
 # ─────────────────────────────────────────────
 def build_payload() -> dict:
     base = {"num_questions": int(num_questions), "use_cache": use_cache}
+
     if endpoint == "generate-topics":
         base.update({
             "assessment_title": assessment_title,
@@ -222,7 +246,23 @@ def build_payload() -> dict:
                      "job_role": job_role, "experience_years": experience_years})
     elif endpoint == "generate-aiml":
         base.update({"topic": topic, "difficulty": difficulty})
+    elif endpoint == "generate-aiml-library":
+        concepts_list = [c.strip() for c in concepts_input.split(",") if c.strip()]
+        base.update({
+            "topic":      topic,
+            "difficulty": difficulty,
+            "concepts":   concepts_list,
+        })
+    elif endpoint == "generate-dsa-question":
+        concepts_list = [c.strip() for c in concepts_input.split(",") if c.strip()]
+        base = {
+            "topic":      topic,
+            "difficulty": difficulty,
+            "concepts":   concepts_list,
+            "languages":  dsa_languages,
+        }
     return base
+
 
 # ─────────────────────────────────────────────
 # DISPLAY HELPERS
@@ -331,7 +371,16 @@ def render_aiml_problem(p: dict, index: int):
     st.markdown(f"#### AI/ML Problem {index}")
     st.write(p.get("problemStatement", ""))
 
-    # Tasks section
+    # Dataset strategy badge
+    strategy = p.get("dataset_strategy", "")
+    if strategy:
+        badge_map = {
+            "library":           "📚 Library Dataset",
+            "synthetic":         "🔧 Synthetic Dataset",
+            "synthetic_fallback":"🔧 Synthetic Fallback",
+        }
+        st.caption(f"Dataset strategy: **{badge_map.get(strategy, strategy)}**")
+
     if p.get("tasks"):
         with st.expander("📋 Tasks", expanded=True):
             for t in p["tasks"]:
@@ -341,8 +390,16 @@ def render_aiml_problem(p: dict, index: int):
         dataset = p["dataset"]
         with st.expander("📊 Dataset Details", expanded=True):
             st.write(f"**Description:** {dataset.get('description', '')}")
+
+            # Library dataset — show load code
+            if dataset.get("direct_load") and dataset.get("load_code"):
+                st.markdown("**Load Code (run in notebook):**")
+                st.code(dataset["load_code"], language="python")
+                st.info("✅ This dataset loads directly from the library — no download needed.")
+
             c1, c2 = st.columns(2)
             with c1:
+                st.write(f"**Source:** `{dataset.get('source', '—')}`")
                 st.write(f"**Target:** `{dataset.get('target', '—')}`")
                 st.write(f"**Target Type:** `{dataset.get('target_type', '—')}`")
                 st.write(f"**Size:** `{dataset.get('size', '—')}`")
@@ -363,11 +420,13 @@ def render_aiml_problem(p: dict, index: int):
                     _ax.set_facecolor("none")
                     st.pyplot(_fig, use_container_width=True)
                     plt.close(_fig)
+
             if dataset.get("features"):
                 st.write(f"**Features ({len(dataset['features'])}):** {', '.join(f'`{f}`' for f in dataset['features'])}")
             if dataset.get("feature_types"):
                 st.write("**Feature Types:**")
                 st.json(dataset["feature_types"])
+
             data_rows = dataset.get("data", [])
             if data_rows:
                 st.write(f"**Dataset ({len(data_rows)} rows):**")
@@ -376,10 +435,36 @@ def render_aiml_problem(p: dict, index: int):
                     st.dataframe(df, use_container_width=True)
                 except Exception:
                     st.json(data_rows[:5])
+            elif dataset.get("direct_load"):
+                st.info("Dataset loads at runtime via load_code — no rows stored.")
             else:
                 st.warning("No dataset rows generated.")
 
-    # Download button OUTSIDE the expander — avoids React re-render loop
+    # Starter code (for library endpoint)
+    if p.get("starter_code"):
+        with st.expander("🖊 Starter Code"):
+            sc = p["starter_code"]
+            if isinstance(sc, dict):
+                py_code = sc.get("python3", sc.get("python", ""))
+                if py_code:
+                    st.code(py_code, language="python")
+            else:
+                st.code(str(sc), language="python")
+
+    if p.get("preprocessing_requirements"):
+        with st.expander("⚙️ Preprocessing Requirements"):
+            for r in p["preprocessing_requirements"]:
+                st.write(f"• {r}")
+    if p.get("expectedApproach"):
+        with st.expander("🧪 Expected Approach"):
+            st.write(p["expectedApproach"])
+    if p.get("evaluationCriteria"):
+        with st.expander("📏 Evaluation Criteria"):
+            for c in p["evaluationCriteria"]:
+                st.write(f"• {c}")
+    st.caption(f"Difficulty: `{p.get('difficulty', '—')}`")
+
+    # Download CSV for synthetic datasets
     data_rows = p.get("dataset", {}).get("data", [])
     if data_rows:
         try:
@@ -394,18 +479,74 @@ def render_aiml_problem(p: dict, index: int):
         except Exception:
             pass
 
-    if p.get("preprocessing_requirements"):
-        with st.expander("⚙️ Preprocessing Requirements"):
-            for r in p["preprocessing_requirements"]:
-                st.write(f"• {r}")
-    if p.get("expectedApproach"):
-        with st.expander("🧪 Expected Approach"):
-            st.write(p["expectedApproach"])
-    if p.get("evaluationCriteria"):
-        with st.expander("📏 Evaluation Criteria"):
-            for c in p["evaluationCriteria"]:
-                st.write(f"• {c}")
-    st.caption(f"Difficulty: `{p.get('difficulty', '—')}`")
+
+def render_dsa_question(p: dict, index: int):
+    st.markdown(f"#### DSA Problem {index}")
+
+    # Reworded badge
+    if p.get("reworded"):
+        st.caption(f"🔄 Reworded from: `{p.get('original_title', '')}`")
+
+    st.markdown("**Problem Statement**")
+    st.write(p.get("description", ""))
+
+    # Tags
+    if p.get("tags"):
+        st.caption(f"Tags: {', '.join(f'`{t}`' for t in p['tags'])}")
+
+    # Example images (for graph/tree problems)
+    if p.get("example_images"):
+        with st.expander("🖼️ Problem Images", expanded=True):
+            for img_url in p["example_images"]:
+                st.image(img_url, use_column_width=True)
+
+    # Examples with text
+    if p.get("examples"):
+        with st.expander(f"📖 Examples ({len(p['examples'])})"):
+            for ex in p["examples"]:
+                st.write(f"**Example {ex.get('example_num', '')}:**")
+                st.code(ex.get("example_text", ""), language="text")
+                st.divider()
+
+    # Function signature
+    if p.get("function_signature"):
+        fn = p["function_signature"]
+        with st.expander("🔧 Function Signature"):
+            params = ", ".join(f"{x.get('name')}: {x.get('type')}" for x in fn.get("parameters", []))
+            sig = f"def {fn.get('name')}({params}) -> {fn.get('return_type', 'Any')}"
+            st.code(sig, language="python")
+
+    # Public test cases
+    if p.get("public_testcases"):
+        with st.expander(f"🧪 Public Test Cases ({len(p['public_testcases'])}) — visible to candidate"):
+            for i, t in enumerate(p["public_testcases"], 1):
+                st.write(f"**Case {i}:** `{t.get('input_raw', '')}`")
+                st.write(f"**Expected:** `{t.get('expected_output', '')}`")
+                st.divider()
+
+    # Hidden test cases count only
+    if p.get("hidden_testcases"):
+        st.info(f"🔒 {len(p['hidden_testcases'])} hidden test cases (edge cases — not visible to candidate)")
+
+    # Starter code by language
+    if p.get("starter_code"):
+        sc = p["starter_code"]
+        if isinstance(sc, dict) and sc:
+            with st.expander(f"🖊 Starter Code ({len(sc)} languages)"):
+                lang_tabs = st.tabs(list(sc.keys()))
+                for tab, (lang, code) in zip(lang_tabs, sc.items()):
+                    with tab:
+                        lang_map = {
+                            "python": "python", "java": "java",
+                            "javascript": "javascript", "typescript": "typescript",
+                            "kotlin": "kotlin", "go": "go", "rust": "rust",
+                            "cpp": "cpp", "csharp": "csharp", "c": "c"
+                        }
+                        st.code(code, language=lang_map.get(lang, "text"))
+
+    c1, c2 = st.columns(2)
+    with c1: st.caption(f"Difficulty: `{p.get('difficulty', '—')}`")
+    with c2: st.caption(f"AI Generated: {'✅' if p.get('ai_generated') else '—'}")
 
 
 def render_topic(t: dict, index: int):
@@ -453,7 +594,6 @@ if st.button("🚀 Generate", type="primary", use_container_width=True, disabled
 
         data = resp.json()
 
-        # Job-based response — store job_id and start polling
         if "job_id" in data:
             st.session_state.pending_job_id = data["job_id"]
             st.session_state.pending_poll_url = f"{API_BASE}/job/{data['job_id']}"
@@ -461,7 +601,6 @@ if st.button("🚀 Generate", type="primary", use_container_width=True, disabled
             st.session_state.last_response = None
             st.rerun()
         else:
-            # Direct response (no job queue)
             st.session_state.last_response = data
             st.session_state.pending_job_id = None
             st.rerun()
@@ -562,10 +701,19 @@ if data:
 
     elif "aiml_problems" in data:
         problems = data["aiml_problems"]
-        st.subheader(f"🤖 AI/ML Problems ({len(problems)})")
+        # Detect which AIML endpoint was used
+        is_library = any(p.get("dataset_strategy") == "library" for p in problems)
+        label = "📚 AI/ML Library Problems" if is_library else "🤖 AI/ML Problems"
+        st.subheader(f"{label} ({len(problems)})")
         for i, p in enumerate(problems, 1):
             with st.container(border=True):
                 render_aiml_problem(p, i)
+
+    # DSA question — direct response (not job-based)
+    elif "public_testcases" in data and "starter_code" in data:
+        st.subheader("🔢 DSA Question")
+        with st.container(border=True):
+            render_dsa_question(data, 1)
 
     elif "dataset" in data and "problemStatement" in data:
         st.subheader("🤖 AI/ML Problem")

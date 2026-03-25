@@ -41,20 +41,27 @@ jobs:
 
       - name: Login to Docker Hub
         run: |
+          mkdir -p /tmp/docker-config
+          echo '{"credsStore":""}' > /tmp/docker-config/config.json
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
           --username "${{ secrets.DOCKERHUB_USERNAME }}" \
           --password-stdin
+        env:
+          DOCKER_CONFIG: /tmp/docker-config
 
       - name: Deploy containers
         run: |
           cd /mnt/c/Users/adity/documents/gisul/gisul_model
 
-          # Stop and remove everything cleanly
-          docker compose down
+          # Force clean existing containers and network
+          docker rm -f qwen-model qwen-frontend 2>/dev/null || true
+          docker network rm gisul_model_default 2>/dev/null || true
 
           # Pull latest images
           docker pull gisul/qwen-api:latest
           docker pull gisul/qwen-frontend:latest
 
-          # Start fresh containers
+          # Start fresh
           docker compose up -d --remove-orphans
+        env:
+          DOCKER_CONFIG: /tmp/docker-config

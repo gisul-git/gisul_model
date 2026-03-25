@@ -420,7 +420,7 @@ def extract_json(text: str) -> dict:
 
     start = text.find('{')
     if start == -1:
-        raise ValueError("No  JSON object found in response")
+        raise ValueError("No JSON object found in response")
 
     depth = 0
     end = -1
@@ -2308,7 +2308,7 @@ def generate_batch_with_qwen(prompts: List[str], max_tokens: int = 2000, tempera
             pad_token_id=TOKENIZER.pad_token_id or TOKENIZER.eos_token_id
         )
     except torch.cuda.OutOfMemoryError:
-        logger.warning(f"CUDA OOM on batch of {len(prompts)} — clearing cache  and retrying as batch_size=1")
+        logger.warning(f"CUDA OOM on batch of {len(prompts)} — clearing cache and retrying as batch_size=1")
         torch.cuda.empty_cache()
         if len(prompts) == 1:
             raise
@@ -3676,9 +3676,9 @@ async def enrich_dsa(problem: dict = Body(...)):
 import os as _os
 import numpy as _np
 
-_DSA_ENRICHED_PATH = "/app/assets/dsa-coding/dsa_enriched.json"
-_DSA_FAISS_PATH    = "/app/assets/dsa-coding/dsa_faiss.index"
-_DSA_METADATA_PATH = "/app/assets/dsa-coding/dsa_metadata.json"
+_DSA_ENRICHED_PATH = "/app/assests/dsa-coding/dsa_enriched.json"
+_DSA_FAISS_PATH    = "/app/assests/dsa-coding/dsa_faiss.index"
+_DSA_METADATA_PATH = "/app/assests/dsa-coding/dsa_metadata.json"
 
 _dsa_enriched_cache  = None
 _dsa_faiss_index     = None
@@ -3916,6 +3916,8 @@ async def generate_dsa_question(request: DSAQuestionRequest):
         "starter_code":       filtered_starter_code,
         "difficulty":         selected.get("difficulty", request.difficulty),
         "tags":               selected.get("tags", selected.get("topics", [])),
+        "examples":           selected.get("examples", []),
+        "example_images":     selected.get("example_images", []),
         "search_method":      search_method,
         "ai_generated":       True,
         "reworded":           True
@@ -3938,9 +3940,9 @@ async def generate_dsa_question(request: DSAQuestionRequest):
 # ============================================================================
 
 # ── AIML catalog paths ───────────────────────────────────────────────────────
-_AIML_CATALOG_PATH   = "/app/assets/aiml-data/aiml_dataset_catalog.json"
-_AIML_FAISS_PATH     = "/app/assets/aiml-data/aiml_faiss.index"
-_AIML_METADATA_PATH  = "/app/assets/aiml-data/aiml_catalog_metadata.json"
+_AIML_CATALOG_PATH   = "/app/assests/aiml-data/aiml_dataset_catalog.json"
+_AIML_FAISS_PATH     = "/app/assests/aiml-data/aiml_faiss.index"
+_AIML_METADATA_PATH  = "/app/assests/aiml-data/aiml_catalog_metadata.json"
 
 _aiml_catalog_cache  = None
 _aiml_faiss_index    = None
