@@ -4251,6 +4251,8 @@ async def generate_aiml_library(request: AIMLLibraryRequest):
                             "size":        matched.get("size", ""),
                             "target":      matched.get("target", ""),
                             "target_type": matched.get("target_type", ""),
+                            "pip_install": matched.get("pip_install", ""),
+                            "import_code": matched.get("import_code", ""),
                             "load_code":   load_code,
                             "direct_load": True,
                             "storage_type": "library",
