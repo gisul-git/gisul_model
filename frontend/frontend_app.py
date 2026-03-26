@@ -159,11 +159,14 @@ st.subheader("🔧 Request Parameters")
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    num_questions = st.number_input(
-        "Number of Questions / Items",
-        min_value=1, max_value=20, value=3,
-        help="How many items to generate in a single request. (Not applicable for DSA question endpoint)"
-    )
+    if endpoint not in ("generate-aiml", "generate-aiml-library", "generate-dsa-question"):
+        num_questions = st.number_input(
+            "Number of Questions / Items",
+            min_value=1, max_value=20, value=3,
+            help="How many items to generate in a single request."
+        )
+    else:
+        num_questions = 1
 
 if needs_topics_fields:
     col1b, col2b = st.columns(2)
@@ -245,14 +248,15 @@ def build_payload() -> dict:
         base.update({"topic": topic, "difficulty": difficulty, "database_type": database_type,
                      "job_role": job_role, "experience_years": experience_years})
     elif endpoint == "generate-aiml":
-        base.update({"topic": topic, "difficulty": difficulty})
+        base = {"use_cache": use_cache, "topic": topic, "difficulty": difficulty}
     elif endpoint == "generate-aiml-library":
         concepts_list = [c.strip() for c in concepts_input.split(",") if c.strip()]
-        base.update({
+        base = {
+            "use_cache":  use_cache,
             "topic":      topic,
             "difficulty": difficulty,
             "concepts":   concepts_list,
-        })
+        }
     elif endpoint == "generate-dsa-question":
         concepts_list = [c.strip() for c in concepts_input.split(",") if c.strip()]
         base = {
@@ -391,10 +395,13 @@ def render_aiml_problem(p: dict, index: int):
         with st.expander("📊 Dataset Details", expanded=True):
             st.write(f"**Description:** {dataset.get('description', '')}")
 
-            # Library dataset — show load code
+            # Library dataset — show import + load code
             if dataset.get("direct_load") and dataset.get("load_code"):
                 st.markdown("**Load Code (run in notebook):**")
-                st.code(dataset["load_code"], language="python")
+                import_code = dataset.get("import_code", "")
+                load_code   = dataset["load_code"]
+                combined    = f"{import_code}\n\n{load_code}" if import_code else load_code
+                st.code(combined, language="python")
                 st.info("✅ This dataset loads directly from the library — no download needed.")
 
             c1, c2 = st.columns(2)
@@ -423,6 +430,8 @@ def render_aiml_problem(p: dict, index: int):
 
             if dataset.get("features"):
                 st.write(f"**Features ({len(dataset['features'])}):** {', '.join(f'`{f}`' for f in dataset['features'])}")
+            if dataset.get("features_info"):
+                st.write(f"**Features Info:** {dataset['features_info']}")
             if dataset.get("feature_types"):
                 st.write("**Feature Types:**")
                 st.json(dataset["feature_types"])
