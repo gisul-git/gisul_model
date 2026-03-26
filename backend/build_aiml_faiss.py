@@ -27,9 +27,9 @@ import os
 import numpy as np
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CATALOG_FILE    = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\aiml-data\aiml_dataset_catalog.json"
-FAISS_INDEX     = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\aiml-data\aiml_faiss.index"
-METADATA_FILE   = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\aiml-data\aiml_catalog_metadata.json"
+CATALOG_FILE = "/mnt/c/Users/adity/Documents/Gisul/gisul_model/assets/aiml-data/aiml_dataset_catalog.json"
+FAISS_INDEX   = "/mnt/c/Users/adity/Documents/Gisul/gisul_model/assets/aiml-data/aiml_faiss.index"
+METADATA_FILE = "/mnt/c/Users/adity/Documents/Gisul/gisul_model/assets/aiml-data/aiml_catalog_metadata.json"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 BATCH_SIZE      = 32
 # ──────────────────────────────────────────────────────────────────────────────
