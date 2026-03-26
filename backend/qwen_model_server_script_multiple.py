@@ -2703,14 +2703,330 @@ JSON FORMAT:
 Generate now:"""
 
 
+def _build_task_scaffold(topic: str, difficulty: str, target_type: str = "",
+                         category: str = "", domain: str = "",
+                         features_info: str = "", dataset_name: str = "") -> str:
+    """
+    Derives a dynamic, context-aware task instruction block from topic/difficulty/
+    target_type/category/domain at prompt-build time (pure Python — no LLM).
+
+    This replaces hardcoded task template strings so the LLM generates tasks that
+    are genuinely shaped by what the problem actually is.
+
+    Rules:
+      - target_type drives the modelling and evaluation tasks
+      - category (cv / nlp / audio / graph / time-series / tabular) drives
+        what EDA and preprocessing tasks look like
+      - difficulty drives depth: Easy = basic, Medium = tuning/comparison,
+        Hard = pipelines/advanced techniques
+      - domain adds domain-specific insight angle
+    """
+    topic_l     = topic.lower()
+    difficulty_l = difficulty.lower()
+    target_l    = target_type.lower()
+    category_l  = category.lower()
+    domain_l    = domain.lower()
+
+    # ── 1. Decide problem family ──────────────────────────────────────────────
+    is_regression   = "continuous" in target_l or "regression" in target_l
+    is_binary       = "binary" in target_l
+    is_multiclass   = "multiclass" in target_l or "multi-class" in target_l
+    is_multilabel   = "multilabel" in target_l or "multi-label" in target_l
+    is_clustering   = "cluster" in topic_l or "segment" in topic_l
+    is_cv           = category_l == "cv"     or any(k in topic_l for k in ["image","vision","pixel","cnn","object detect","face"])
+    is_nlp          = category_l == "nlp"    or any(k in topic_l for k in ["text","sentiment","nlp","language","nlp","document","news","tweet","review","bert","llm"])
+    is_audio        = category_l == "audio"  or any(k in topic_l for k in ["audio","speech","sound","voice","music"])
+    is_timeseries   = category_l == "time-series" or any(k in topic_l for k in ["time series","forecasting","temporal","arima","lstm","stock","electricity","weather"])
+    is_graph        = category_l == "graph"  or any(k in topic_l for k in ["graph","network","node","edge","gnn"])
+    is_generative   = any(k in topic_l for k in ["generat","gan","diffusion","vae","autoencoder","synthetic data"])
+    is_anomaly      = any(k in topic_l for k in ["anomaly","fraud","outlier","intrusion","defect"])
+    is_tabular      = not (is_cv or is_nlp or is_audio or is_timeseries or is_graph)
+
+    # ── 2. Difficulty modifiers ───────────────────────────────────────────────
+    if difficulty_l == "easy":
+        model_depth   = "Train a single baseline model (e.g. Logistic Regression or Decision Tree). Report accuracy on test set."
+        eval_depth    = "Evaluate using a confusion matrix and one primary metric (Accuracy or RMSE)."
+        insight_depth = "Identify the top 3 most important features using the model's built-in feature importance or coefficients."
+        extra_task    = ""
+    elif difficulty_l == "hard":
+        model_depth   = (
+            "Build a full ML pipeline using sklearn Pipeline or equivalent. Train at least 3 models including "
+            "one ensemble (e.g. XGBoost or LightGBM) and one interpretable baseline. Perform hyperparameter "
+            "tuning using GridSearchCV or Optuna."
+        )
+        eval_depth    = (
+            "Evaluate with full metric suite. Plot learning curves to diagnose bias/variance. "
+            "Use cross-validation (k=5) rather than a single train/test split."
+        )
+        insight_depth = (
+            "Use SHAP values to explain individual predictions. Identify the top drivers and explain "
+            "their real-world meaning in the context of the problem domain."
+        )
+        extra_task    = (
+            "Task 6: Model Deployment Readiness — export the best model using joblib or pickle. "
+            "Write a predict() function that accepts raw input in the same format as the original features "
+            "and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
+        )
+    else:  # Medium
+        model_depth   = (
+            "Train at least 2 models of different families (e.g. one linear, one tree-based). "
+            "Compare performance and justify which is more appropriate for this problem."
+        )
+        eval_depth    = (
+            "Evaluate using metrics appropriate for this target type. "
+            "Plot a confusion matrix (classification) or residual plot (regression)."
+        )
+        insight_depth = (
+            "Use feature importance or permutation importance to identify the top 5 most predictive features. "
+            "Explain what each implies in the real-world context of the problem."
+        )
+        extra_task    = ""
+
+    # ── 3. Task 1: Data loading — shaped by category ─────────────────────────
+    if is_cv:
+        task1 = (
+            f"Task 1: Data Loading and Inspection — load the dataset. Display sample images from each class "
+            f"(at least 5 per class). Report the total number of images, image dimensions, colour channels, "
+            f"and class distribution. Check for any corrupted or unusually sized images."
+        )
+    elif is_nlp:
+        task1 = (
+            f"Task 1: Data Loading and Text Inspection — load the dataset. Display 5 sample texts per class/label. "
+            f"Report vocabulary size, average token length, class distribution, and language distribution if multilingual. "
+            f"Identify any HTML artefacts, special characters, or encoding issues."
+        )
+    elif is_audio:
+        task1 = (
+            f"Task 1: Data Loading and Audio Inspection — load the dataset. Display the waveform and spectrogram "
+            f"of one sample per class. Report sampling rate, clip duration distribution, and class balance. "
+            f"Check for silent clips or clipping artefacts."
+        )
+    elif is_timeseries:
+        task1 = (
+            f"Task 1: Data Loading and Time Series Inspection — load the dataset. Plot the full time series "
+            f"for each key variable. Report the time range, sampling frequency, and any obvious gaps or anomalies. "
+            f"Check for stationarity using the ADF test."
+        )
+    elif is_graph:
+        task1 = (
+            f"Task 1: Data Loading and Graph Inspection — load the graph dataset. Report the number of nodes, "
+            f"edges, and node features. Visualise a subgraph of 50 nodes. Check degree distribution and "
+            f"identify hub nodes."
+        )
+    else:
+        task1 = (
+            f"Task 1: Data Loading and Exploration — load the dataset for '{topic}'. "
+            f"Display shape, dtypes, first 10 rows, and per-column missing value counts. "
+            f"Report descriptive statistics and identify any data quality issues specific to this domain."
+        )
+
+    # ── 4. Task 2: Preprocessing — shaped by category + target ───────────────
+    if is_cv:
+        if difficulty_l == "easy":
+            task2 = (
+                "Task 2: Image Preprocessing — resize all images to a consistent size (e.g. 224×224). "
+                "Normalise pixel values to [0, 1]. Split 80/20 train/test with stratification."
+            )
+        else:
+            task2 = (
+                "Task 2: Image Preprocessing and Augmentation — resize all images and normalise pixel values. "
+                "Apply data augmentation (random flip, rotation, zoom) to the training set only. "
+                "Split 80/20 with stratification. Report class balance after split."
+            )
+    elif is_nlp:
+        task2 = (
+            "Task 2: Text Preprocessing — clean text (lowercase, remove punctuation/HTML/stopwords). "
+            "Tokenise using an appropriate tokeniser (word-level or subword). "
+            "Apply TF-IDF vectorisation or tokenise for a transformer model. "
+            "Split 80/20 train/test with stratification on the label."
+        )
+    elif is_audio:
+        task2 = (
+            "Task 2: Audio Feature Extraction — extract MFCC features (13–40 coefficients) from each clip. "
+            "Optionally extract mel-spectrograms for deep learning approaches. "
+            "Normalise features. Split 80/20 with stratification."
+        )
+    elif is_timeseries:
+        task2 = (
+            "Task 2: Time Series Preprocessing — handle missing timestamps and interpolate gaps. "
+            "Apply differencing or log-transform if the series is non-stationary. "
+            "Create lag features and rolling window statistics as additional features. "
+            "Use a time-ordered train/test split (no random shuffle)."
+        )
+    else:
+        split_note = "Use stratified split for classification." if (is_binary or is_multiclass) else "Use a standard 80/20 split."
+        imbalance_note = " Address class imbalance using SMOTE or class_weight='balanced'." if is_binary else ""
+        task2 = (
+            f"Task 2: Data Preprocessing — handle missing values (impute or drop as appropriate). "
+            f"Encode categorical features using LabelEncoder or OneHotEncoder as appropriate. "
+            f"Scale numerical features using StandardScaler or MinMaxScaler. "
+            f"{split_note}{imbalance_note}"
+        )
+
+    # ── 5. Task 3: EDA — shaped by category + domain ─────────────────────────
+    if is_cv:
+        task3 = (
+            "Task 3: Visual EDA — display a grid of sample images from each class. "
+            "Plot the class distribution as a bar chart. For tabular metadata (if available), "
+            "plot distributions of key attributes. Visualise mean and variance images per class."
+        )
+    elif is_nlp:
+        task3 = (
+            "Task 3: Text EDA — plot word frequency distributions per class using bar charts or word clouds. "
+            "Visualise text length distributions. Plot the class label distribution. "
+            "Identify the most discriminative words using TF-IDF scores."
+        )
+    elif is_audio:
+        task3 = (
+            "Task 3: Audio EDA — plot MFCC feature distributions per class. "
+            "Visualise mel-spectrograms side by side for different classes. "
+            "Plot clip duration and sampling rate distributions."
+        )
+    elif is_timeseries:
+        task3 = (
+            "Task 3: Time Series EDA — decompose the series into trend, seasonality, and residual. "
+            "Plot autocorrelation (ACF) and partial autocorrelation (PACF). "
+            "Visualise seasonal patterns using box plots grouped by month/hour/day. "
+            "Plot rolling mean and standard deviation to confirm stationarity."
+        )
+    elif is_clustering:
+        task3 = (
+            f"Task 3: EDA for Clustering — plot pairwise scatter plots of key features coloured by any available labels. "
+            f"Compute and visualise the correlation matrix. "
+            f"Use PCA or t-SNE to project features into 2D and look for natural groupings relevant to '{topic}'."
+        )
+    elif is_anomaly:
+        task3 = (
+            f"Task 3: Anomaly EDA — plot the class imbalance ratio. "
+            f"Visualise the distribution of key numeric features split by normal vs anomalous samples. "
+            f"Plot a correlation heatmap and identify features most correlated with the anomaly label."
+        )
+    else:
+        # Generic tabular — but domain-aware angle
+        domain_eda = ""
+        if "churn" in topic_l or "retention" in topic_l:
+            domain_eda = "Plot churn rate by contract type, tenure bucket, and payment method. Visualise monthly charges distribution by churn status."
+        elif "fraud" in topic_l:
+            domain_eda = "Plot transaction amount distributions for fraud vs legitimate. Visualise fraud rate by merchant category and hour of day."
+        elif "medical" in topic_l or "health" in topic_l or "disease" in topic_l:
+            domain_eda = "Plot distributions of key clinical features (e.g. age, BMI) split by outcome. Visualise correlation heatmap of lab values."
+        elif "price" in topic_l or "house" in topic_l or "real estate" in topic_l:
+            domain_eda = "Plot price distribution and log-price distribution. Visualise price vs key predictors (size, location, year built)."
+        elif "credit" in topic_l or "loan" in topic_l or "default" in topic_l:
+            domain_eda = "Plot default rate by loan grade, employment length, and home ownership. Visualise interest rate and loan amount distributions."
+        else:
+            domain_eda = (
+                f"Visualise the target distribution. Plot the top-10 feature correlations with the target. "
+                f"Create 2–3 domain-specific plots relevant to '{topic}'."
+            )
+        task3 = f"Task 3: Exploratory Data Analysis — {domain_eda}"
+
+    # ── 6. Task 4: Modelling — shaped by target_type + category + difficulty ──
+    if is_cv:
+        if difficulty_l == "easy":
+            task4 = (
+                "Task 4: Model Training — train a simple CNN (2–3 conv layers) from scratch. "
+                f"{eval_depth}"
+            )
+        elif difficulty_l == "hard":
+            task4 = (
+                "Task 4: Model Training — fine-tune a pretrained model (e.g. ResNet-50 or EfficientNet-B0) "
+                "using transfer learning. Freeze the base layers and train only the classification head first, "
+                f"then unfreeze and fine-tune end-to-end. {eval_depth}"
+            )
+        else:
+            task4 = (
+                "Task 4: Model Training — train a baseline CNN and a pretrained model (e.g. MobileNetV2) "
+                f"with transfer learning. {eval_depth}"
+            )
+    elif is_nlp:
+        if difficulty_l == "hard":
+            task4 = (
+                "Task 4: Model Training — fine-tune a pretrained transformer (e.g. bert-base-uncased or "
+                "distilbert-base-uncased) for this task. Also train a TF-IDF + Logistic Regression baseline "
+                f"for comparison. {eval_depth}"
+            )
+        else:
+            task4 = (
+                "Task 4: Model Training — train a TF-IDF + Logistic Regression baseline and a TF-IDF + "
+                f"Random Forest model. If time allows, fine-tune a lightweight transformer. {eval_depth}"
+            )
+    elif is_audio:
+        task4 = (
+            "Task 4: Model Training — train a Random Forest on MFCC features as a baseline. "
+            "Also train a simple MLP or 1D CNN on MFCC sequences. "
+            f"{eval_depth}"
+        )
+    elif is_timeseries:
+        if difficulty_l == "easy":
+            task4 = f"Task 4: Model Training — fit an ARIMA model. Report AIC/BIC and plot residuals. {eval_depth}"
+        elif difficulty_l == "hard":
+            task4 = (
+                "Task 4: Model Training — train an ARIMA/SARIMA model as a statistical baseline. "
+                "Also train an LSTM or Transformer-based forecasting model. "
+                f"Compare using rolling-origin cross-validation. {eval_depth}"
+            )
+        else:
+            task4 = (
+                "Task 4: Model Training — train an ARIMA baseline and a gradient-boosted model "
+                f"(LightGBM) using lag features. {eval_depth}"
+            )
+    elif is_clustering:
+        task4 = (
+            f"Task 4: Clustering — apply K-Means clustering. Use the Elbow method and Silhouette score "
+            f"to choose the optimal number of clusters. Also try DBSCAN as an alternative. "
+            f"Visualise clusters using PCA or t-SNE."
+        )
+    elif is_generative:
+        task4 = (
+            f"Task 4: Generative Model Training — implement the generative architecture appropriate for "
+            f"'{topic}'. Train on the dataset and generate samples. Evaluate using appropriate metrics "
+            f"(FID for images, BLEU/ROUGE for text, perceptual loss as applicable)."
+        )
+    elif is_regression:
+        task4 = (
+            f"Task 4: Model Training — {model_depth} "
+            f"For regression, evaluate using RMSE, MAE, and R². Plot predicted vs actual values."
+        )
+    else:  # classification
+        imb_note = " Use class_weight='balanced' or SMOTE to handle class imbalance." if is_binary else ""
+        task4 = (
+            f"Task 4: Model Training — {model_depth}{imb_note} "
+            f"{eval_depth}"
+        )
+
+    # ── 7. Task 5: Insights — always domain-specific ─────────────────────────
+    task5 = f"Task 5: Model Comparison and Domain Insights — {insight_depth}"
+
+    # ── 8. Assemble task list ─────────────────────────────────────────────────
+    tasks = [task1, task2, task3, task4, task5]
+    if extra_task:
+        tasks.append(extra_task)
+
+    # Return as a formatted string block for injection into the prompt
+    return "\n".join(f'    "{t}",' for t in tasks)
+
+
 def build_aiml_prompt(request_data):
     """
     Pass 1 prompt — model generates SCHEMA ONLY (no data rows).
     Data rows are generated programmatically in Pass 2 by generate_aiml_dataset().
+
+    Task scaffold is computed in Python (not by the LLM) so tasks are always
+    shaped by topic/difficulty/domain — never templated.
     """
+    topic      = request_data['topic']
+    difficulty = request_data['difficulty']
+
+    # Derive task scaffold now — LLM will fill in feature-specific detail
+    task_scaffold = _build_task_scaffold(
+        topic=topic,
+        difficulty=difficulty,
+    )
+
     return f"""You are an expert AI/ML assessment designer.
 
-Generate a {request_data['difficulty']} difficulty AI/ML problem about: {request_data['topic']}
+Generate a {difficulty} difficulty AI/ML problem about: {topic}
 
 RULES:
 - Choose feature names SPECIFIC and REALISTIC for this topic (10-15 features).
@@ -2728,24 +3044,19 @@ RULES:
 - target variable MUST NOT appear in features list.
 - Do NOT generate any data rows — dataset will be generated programmatically.
 - ALL fields below are REQUIRED. Do not leave any field empty or as a placeholder.
-- tasks and preprocessing_requirements MUST be specific to the features you define above.
-  Do NOT write generic task text — reference the ACTUAL feature names and domain context of {request_data['topic']}.
-
-TASK GENERATION RULES — tasks must be specific to THIS dataset and topic, NOT generic:
-- Task 1: Data loading must name the exact synthetic features you designed above.
-- Task 2: Preprocessing must call out WHICH specific features need encoding/normalization by name.
-- Task 3: EDA must suggest plots that make sense for THIS domain (e.g. for churn: tenure vs churn rate, for medical: correlation heatmap of lab values).
-- Task 4: Model selection must justify algorithms for the specific target_type you chose.
-- Task 5: Insights must be domain-specific to the topic (e.g. for fraud: flag high-risk merchant categories, for HR: identify top drivers of attrition).
-- preprocessing_requirements must list ACTUAL feature names from your features list, not generic placeholders.
-- evaluationCriteria must match the target_type: classification → Accuracy/F1/ROC-AUC, regression → RMSE/MAE/R².
+- The tasks array below is PRE-STRUCTURED for this topic and difficulty.
+  You MUST expand each task by inserting the ACTUAL feature names you designed above.
+  Replace ALL placeholders like [feature_name] or generic words with the real feature names.
+  Do NOT change the task structure or add new tasks — only fill in the feature-specific details.
+- preprocessing_requirements must name ACTUAL features from your features list.
+- evaluationCriteria must match the target_type.
 
 Return ONLY this JSON (no data array):
 {{
-  "problemStatement": "Detailed real-world problem description for {request_data['topic']} — explain the business/research context, who uses this, and what decision it enables.",
+  "problemStatement": "Detailed real-world problem description for {topic} — explain the business/research context, who uses this, and what decision it enables.",
   "dataset": {{
-    "description": "What this dataset represents in real business/research context for {request_data['topic']}",
-    "features": ["realistic_name_1", "realistic_name_2", "...10-15 names specific to {request_data['topic']}"],
+    "description": "What this dataset represents in real business/research context for {topic}",
+    "features": ["realistic_name_1", "realistic_name_2", "...10-15 names specific to {topic}"],
     "feature_types": {{
       "realistic_name_1": "numerical (continuous, range: 20 to 150)",
       "realistic_name_2": "categorical (values: monthly, annual, weekly)"
@@ -2753,23 +3064,19 @@ Return ONLY this JSON (no data array):
     "target": "target_variable_name",
     "target_type": "binary (0: label0, 1: label1) OR continuous OR multiclass (classes: A, B, C)",
     "class_distribution": {{"class0": 70, "class1": 30}},
-    "size": "150 samples"
+    "size": "400 samples"
   }},
   "tasks": [
-    "Task 1: Data Loading and Exploration — [write a specific task referencing the actual feature names you chose above for {request_data['topic']}. Mention what domain-specific patterns to look for.]",
-    "Task 2: Data Preprocessing — [write a specific task calling out WHICH of your features need encoding, WHICH need normalization, and whether stratification is needed based on target_type]",
-    "Task 3: Exploratory Data Analysis — [write 2-3 specific plot ideas that make sense for {request_data['topic']} — name the actual features to plot against each other]",
-    "Task 4: Model Training — [name 2 specific algorithms justified for this target_type and domain. Specify which metrics to evaluate.]",
-    "Task 5: Domain Insights — [write domain-specific business questions to answer, referencing the actual features and the real-world context of {request_data['topic']}]"
+{task_scaffold}
   ],
   "preprocessing_requirements": [
-    "Specific step naming an ACTUAL feature from the features list above (e.g. encode contract_type using LabelEncoder)",
-    "Specific step naming another ACTUAL feature (e.g. normalize monthly_bill and tenure_months with MinMaxScaler)",
-    "Specific step for data quality or imbalance relevant to this dataset (e.g. handle class imbalance with SMOTE)"
+    "Specific step naming an ACTUAL feature from the features list above",
+    "Specific step naming another ACTUAL feature",
+    "Specific step for data quality or imbalance relevant to this dataset"
   ],
-  "expectedApproach": "Name 2-3 specific ML algorithms suited for {request_data['topic']} and explain WHY each fits this target_type and feature set.",
+  "expectedApproach": "Name 2-3 specific ML algorithms suited for {topic} and explain WHY each fits this target_type and feature set.",
   "evaluationCriteria": ["metric appropriate for this target_type", "second metric", "third metric"],
-  "difficulty": "{request_data['difficulty']}"
+  "difficulty": "{difficulty}"
 }}
 
 Generate now:"""
@@ -4109,6 +4416,17 @@ def _build_aiml_library_prompt(request_data: dict, dataset: dict) -> str:
     concepts    = request_data.get("concepts", [])
     concepts_str = ", ".join(concepts) if concepts else "general ML"
 
+    # Derive task scaffold from actual dataset metadata — not a template
+    task_scaffold = _build_task_scaffold(
+        topic        = topic,
+        difficulty   = difficulty,
+        target_type  = dataset.get("target_type", ""),
+        category     = dataset.get("category", ""),
+        domain       = dataset.get("domain", ""),
+        features_info= dataset.get("features_info", ""),
+        dataset_name = dataset.get("name", ""),
+    )
+
     return f"""You are an expert AI/ML assessment designer.
 
 Generate a {difficulty} difficulty AI/ML problem using this REAL dataset.
@@ -4134,22 +4452,22 @@ RULES:
 - Do NOT generate synthetic data.
 - expectedApproach must suggest algorithms appropriate for this dataset target type.
 - evaluationCriteria must match the target type (classification vs regression metrics).
+- The tasks array below is PRE-STRUCTURED for this dataset's modality, target type, and difficulty.
+  You MUST expand each task by inserting the ACTUAL column/feature names from this dataset.
+  Replace any generic references with specific feature names from the Features field above.
+  Do NOT change the task structure or add new tasks.
 - ALL fields are REQUIRED.
 
 Return ONLY this JSON:
 {{
   "problemStatement": "Detailed real-world problem description grounded in the actual dataset domain",
   "tasks": [
-    "Task 1: Data Loading and Exploration — load the {dataset.get('name', '')} dataset using the provided load_code. Examine the actual columns specific to this dataset. Display shape, first 10 rows, check missing values per column, data types, and summary statistics relevant to {topic}.",
-    "Task 2: Data Preprocessing — handle any missing values in this specific dataset. Identify which features from {dataset.get('name', '')} need encoding or normalization. Apply appropriate transformations. Split 80/20 train/test.",
-    "Task 3: Exploratory Data Analysis — visualize the {dataset.get('target', 'target')} distribution. Plot correlations between features in this {dataset.get('domain', 'domain')} dataset. Create 2-3 meaningful domain-specific plots for {topic}.",
-    "Task 4: Model Training — train at least 2 ML models best suited for this {dataset.get('target_type', '')} problem using {dataset.get('name', '')} features. Evaluate with metrics appropriate for this target type.",
-    "Task 5: Model Comparison and {dataset.get('domain', 'Domain')} Insights — compare model performance on this specific dataset. Identify the most predictive features. Provide actionable {dataset.get('domain', 'domain')}-specific recommendations for {topic}."
+{task_scaffold}
   ],
   "preprocessing_requirements": [
-    "Specific step 1 for THIS dataset",
-    "Specific step 2 for THIS dataset",
-    "Specific step 3 for THIS dataset"
+    "Specific step 1 naming ACTUAL features from this dataset",
+    "Specific step 2 naming ACTUAL features from this dataset",
+    "Specific step 3 for data quality or imbalance relevant to this dataset"
   ],
   "expectedApproach": "2-3 specific ML algorithms suited for this exact dataset with reasoning.",
   "evaluationCriteria": ["metric1", "metric2", "metric3"],
@@ -4251,8 +4569,6 @@ async def generate_aiml_library(request: AIMLLibraryRequest):
                             "size":        matched.get("size", ""),
                             "target":      matched.get("target", ""),
                             "target_type": matched.get("target_type", ""),
-                            "pip_install": matched.get("pip_install", ""),
-                            "import_code": matched.get("import_code", ""),
                             "load_code":   load_code,
                             "direct_load": True,
                             "storage_type": "library",
