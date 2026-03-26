@@ -63,20 +63,30 @@ def build_search_text(dataset: dict) -> str:
     if domain:
         parts.append(domain)
 
+    # Category (tabular / nlp / time-series / etc.)
+    category = dataset.get("category", "")
+    if category:
+        parts.append(category)
+
     # Tags — very important for matching
     tags = dataset.get("tags", [])
     if tags:
         parts.append(" ".join(tags))
+
+    # Use-case — captures what the dataset is used for
+    use_case = dataset.get("use_case", "")
+    if use_case:
+        parts.append(use_case[:200])
 
     # Description — semantic meaning
     description = dataset.get("description", "")
     if description:
         parts.append(description[:300])
 
-    # Features description
-    features_desc = dataset.get("features_description", "")
-    if features_desc:
-        parts.append(features_desc[:150])
+    # Features info (new field — replaces features_description)
+    features_info = dataset.get("features_info", "")
+    if features_info:
+        parts.append(features_info[:150])
 
     # Target type
     target_type = dataset.get("target_type", "")

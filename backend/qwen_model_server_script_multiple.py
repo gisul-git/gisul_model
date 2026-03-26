@@ -300,7 +300,6 @@ class SQLBatchResponse(BaseModel):
 class AIMLGenerationRequest(BaseModel):
     topic: str
     difficulty: str
-    num_questions: int = 1
     use_cache: bool = True
 
 class AIMLGenerationResponse(BaseModel):
@@ -2746,11 +2745,11 @@ Return ONLY this JSON (no data array):
     "size": "150 samples"
   }},
   "tasks": [
-    "Task 1: Data Loading and Exploration — load into DataFrame, display first 10 rows, check missing values, data types, shape, summary statistics.",
-    "Task 2: Data Preprocessing — handle missing values, encode categorical features, normalize numerical features, split 80/20 train/test.",
-    "Task 3: Exploratory Data Analysis — visualize target distribution, feature correlations, key feature vs target plots using matplotlib/seaborn.",
-    "Task 4: Model Training — train at least 2 ML models appropriate for this problem, evaluate with relevant metrics.",
-    "Task 5: Model Comparison and Insights — compare models, identify important features, give business recommendations."
+    "Task 1: Data Loading and Exploration — load the {request_data['topic']} dataset into a DataFrame. Display shape, first 10 rows, check missing values per feature, data types, and descriptive statistics. Identify any data quality issues specific to this domain.",
+    "Task 2: Data Preprocessing — handle missing values found in Task 1. Encode categorical features specific to this dataset. Normalize/standardize numerical features relevant to {request_data['topic']}. Split 80/20 train/test with stratification if classification.",
+    "Task 3: Exploratory Data Analysis — visualize the target variable distribution. Plot top feature correlations. Create at least 2 domain-specific plots relevant to {request_data['topic']} using matplotlib/seaborn.",
+    "Task 4: Model Training — train at least 2 ML models best suited for this specific {request_data['topic']} problem type. Justify your model choices. Evaluate with metrics appropriate for this target type.",
+    "Task 5: Model Comparison and Domain Insights — compare model performance. Identify the most predictive features for {request_data['topic']}. Provide actionable business/domain recommendations based on model findings."
   ],
   "preprocessing_requirements": [
     "First specific preprocessing step required for THIS dataset (e.g. encode contract_type using LabelEncoder)",
@@ -3279,88 +3278,86 @@ async def generate_sql(request: SQLGenerationRequest):
 async def generate_aiml(request: AIMLGenerationRequest):
     update_stats("aiml")
     data = request.model_dump()
-    num_q = max(1, request.num_questions)
     job_id = str(uuid.uuid4())
     JOB_STORE[job_id] = {"status": "pending", "result": None, "error": None}
 
     async def _aiml_task():
         JOB_STORE[job_id]["status"] = "processing"
         try:
-            all_problems = []
-            any_cache_hit = False
-            total_time = 0.0
-            for i in range(num_q):
-                item_data = {k: v for k, v in data.items() if k not in ("num_questions",)}
-                cache_key = generate_cache_key("aiml", {**item_data, "question_index": i})
-                if request.use_cache:
-                    cached = get_from_cache(cache_key)
-                    if cached:
-                        any_cache_hit = True
-                        all_problems.append(cached)
-                        continue
+            item_data = {k: v for k, v in data.items()}
+            cache_key = generate_cache_key("aiml", item_data)
 
-                # ── Pass 1: Model generates schema (no data rows) ─────────────
-                token_limit = calculate_aiml_token_limit(item_data)
-                result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
+            if request.use_cache:
+                cached = get_from_cache(cache_key)
+                if cached:
+                    cached["cache_hit"] = True
+                    JOB_STORE[job_id] = {
+                        "status": "complete",
+                        "result": {"aiml_problems": [cached], "generation_time_seconds": 0, "cache_hit": True, "batched": False, "batch_size": 1},
+                        "error": None,
+                    }
+                    return
 
-                # ── Pass 2: Python generates dataset rows from schema ──────────
-                difficulty = item_data.get("difficulty", "Medium").lower()
-                num_rows = {"easy": 300, "medium": 400, "hard": 500}.get(difficulty, 400)
+            # ── Pass 1: Model generates schema (no data rows) ─────────────
+            token_limit = calculate_aiml_token_limit(item_data)
+            result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
 
-                try:
-                    dataset_schema = result.get("dataset", {})
-                    generated_rows = generate_aiml_dataset(dataset_schema, num_rows=num_rows)
-                    result["dataset"]["data"] = generated_rows
-                    result["dataset"]["size"] = f"{len(generated_rows)} samples"
-                    logger.info(f"Pass 2 complete: {len(generated_rows)} rows generated for problem {i+1}")
-                except Exception as gen_err:
-                    logger.error(f"Pass 2 dataset generation failed: {gen_err} — continuing without data rows")
-                    result["dataset"]["data"] = []
-                    result["dataset"]["size"] = "0 samples (generation failed)"
+            # ── Pass 2: Python generates dataset rows from schema ──────────
+            difficulty = item_data.get("difficulty", "Medium").lower()
+            num_rows = {"easy": 300, "medium": 400, "hard": 500}.get(difficulty, 400)
 
-                # ── Fallback for fields the model may return empty ─────────────
-                target_type = result.get("dataset", {}).get("target_type", "")
-                is_regression = "continuous" in target_type.lower()
+            try:
+                dataset_schema = result.get("dataset", {})
+                generated_rows = generate_aiml_dataset(dataset_schema, num_rows=num_rows)
+                result["dataset"]["data"] = generated_rows
+                result["dataset"]["size"] = f"{len(generated_rows)} samples"
+                logger.info(f"Pass 2 complete: {len(generated_rows)} rows generated")
+            except Exception as gen_err:
+                logger.error(f"Pass 2 dataset generation failed: {gen_err}")
+                result["dataset"]["data"] = []
+                result["dataset"]["size"] = "0 samples (generation failed)"
 
-                if not result.get("preprocessing_requirements") or result["preprocessing_requirements"] == [""]:
-                    features = result.get("dataset", {}).get("features", [])
-                    feature_types = result.get("dataset", {}).get("feature_types", {})
-                    cat_feats = [f for f, t in feature_types.items() if "categorical" in t.lower()]
-                    num_feats = [f for f, t in feature_types.items() if "numerical" in t.lower()]
-                    steps = []
-                    if cat_feats:
-                        steps.append(f"Encode categorical features ({', '.join(cat_feats[:2])}) using LabelEncoder or OneHotEncoder.")
-                    if num_feats:
-                        steps.append(f"Normalize numerical features ({', '.join(num_feats[:2])}) using MinMaxScaler or StandardScaler.")
-                    steps.append("Split dataset 80/20 into training and test sets using train_test_split.")
-                    if not is_regression:
-                        steps.append("Check for class imbalance — apply SMOTE or use class_weight='balanced' if needed.")
-                    result["preprocessing_requirements"] = steps
+            # ── Fallback for fields the model may return empty ─────────────
+            target_type = result.get("dataset", {}).get("target_type", "")
+            is_regression = "continuous" in target_type.lower()
 
-                if not result.get("expectedApproach") or len(result.get("expectedApproach", "")) < 20:
-                    if is_regression:
-                        result["expectedApproach"] = "Use Linear Regression as a baseline for interpretability. Also train Random Forest Regressor which handles non-linear relationships well. Compare using RMSE and R² score."
-                    else:
-                        result["expectedApproach"] = "Use Logistic Regression as a baseline for interpretability. Also train Random Forest Classifier which handles non-linear feature interactions. Compare using F1-Score and ROC-AUC."
+            if not result.get("preprocessing_requirements") or result["preprocessing_requirements"] == [""]:
+                feature_types = result.get("dataset", {}).get("feature_types", {})
+                cat_feats = [f for f, t in feature_types.items() if "categorical" in t.lower()]
+                num_feats = [f for f, t in feature_types.items() if "numerical" in t.lower()]
+                steps = []
+                if cat_feats:
+                    steps.append(f"Encode categorical features ({', '.join(cat_feats[:2])}) using LabelEncoder or OneHotEncoder.")
+                if num_feats:
+                    steps.append(f"Normalize numerical features ({', '.join(num_feats[:2])}) using MinMaxScaler or StandardScaler.")
+                steps.append("Split dataset 80/20 into training and test sets using train_test_split.")
+                if not is_regression:
+                    steps.append("Check for class imbalance — apply SMOTE or use class_weight='balanced' if needed.")
+                result["preprocessing_requirements"] = steps
 
-                if not result.get("evaluationCriteria") or result["evaluationCriteria"] == [""]:
-                    if is_regression:
-                        result["evaluationCriteria"] = ["Mean Absolute Error (MAE)", "Root Mean Squared Error (RMSE)", "R² Score", "Mean Absolute Percentage Error (MAPE)"]
-                    else:
-                        result["evaluationCriteria"] = ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"]
+            if not result.get("expectedApproach") or len(result.get("expectedApproach", "")) < 20:
+                if is_regression:
+                    result["expectedApproach"] = "Use Linear Regression as a baseline for interpretability. Also train Random Forest Regressor which handles non-linear relationships well. Compare using RMSE and R² score."
+                else:
+                    result["expectedApproach"] = "Use Logistic Regression as a baseline for interpretability. Also train Random Forest Classifier which handles non-linear feature interactions. Compare using F1-Score and ROC-AUC."
 
-                save_to_cache(cache_key, result)
-                total_time += result.get("generation_time_seconds", 0)
-                all_problems.append(result)
+            if not result.get("evaluationCriteria") or result["evaluationCriteria"] == [""]:
+                if is_regression:
+                    result["evaluationCriteria"] = ["Mean Absolute Error (MAE)", "Root Mean Squared Error (RMSE)", "R² Score", "Mean Absolute Percentage Error (MAPE)"]
+                else:
+                    result["evaluationCriteria"] = ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"]
+
+            result["dataset_strategy"] = "synthetic"
+            save_to_cache(cache_key, result)
 
             JOB_STORE[job_id] = {
                 "status": "complete",
                 "result": {
-                    "aiml_problems": all_problems,
-                    "generation_time_seconds": round(total_time, 3),
-                    "cache_hit": any_cache_hit,
-                    "batched": True,
-                    "batch_size": num_q,
+                    "aiml_problems": [result],
+                    "generation_time_seconds": round(result.get("generation_time_seconds", 0), 3),
+                    "cache_hit": False,
+                    "batched": False,
+                    "batch_size": 1,
                 },
                 "error": None,
             }
@@ -4021,7 +4018,7 @@ def _match_dataset(topic: str, concepts: list, difficulty: str):
 
     if faiss_available:
         try:
-            query = f"{topic} {' '.join(concepts)} {difficulty}"
+            query = f"{topic} {' '.join(concepts)} {difficulty} machine learning dataset"
             query_vec = _aiml_embed_model.encode(
                 [query],
                 convert_to_numpy=True,
@@ -4110,7 +4107,7 @@ Name: {dataset.get('name', '')}
 Source: {dataset.get('source', '')}
 Domain: {dataset.get('domain', '')}
 Description: {dataset.get('description', '')}
-Features: {dataset.get('features_description', '')}
+Features: {dataset.get('features_info', '')}
 Target: {dataset.get('target', '')}
 Target type: {dataset.get('target_type', '')}
 Size: {dataset.get('size', '')}
@@ -4132,11 +4129,11 @@ Return ONLY this JSON:
 {{
   "problemStatement": "Detailed real-world problem description grounded in the actual dataset domain",
   "tasks": [
-    "Task 1: Data Loading and Exploration — load the dataset, display shape, first 10 rows, data types, missing values, and summary statistics.",
-    "Task 2: Data Preprocessing — handle missing values, encode categorical features, normalize numerical features, split 80/20 train/test.",
-    "Task 3: Exploratory Data Analysis — visualize target distribution, feature correlations, and key feature vs target plots.",
-    "Task 4: Model Training — train at least 2 ML models appropriate for this problem, evaluate with relevant metrics.",
-    "Task 5: Model Comparison and Insights — compare models, identify important features, provide business recommendations."
+    "Task 1: Data Loading and Exploration — load the {dataset.get('name', '')} dataset using the provided load_code. Examine the actual columns specific to this dataset. Display shape, first 10 rows, check missing values per column, data types, and summary statistics relevant to {topic}.",
+    "Task 2: Data Preprocessing — handle any missing values in this specific dataset. Identify which features from {dataset.get('name', '')} need encoding or normalization. Apply appropriate transformations. Split 80/20 train/test.",
+    "Task 3: Exploratory Data Analysis — visualize the {dataset.get('target', 'target')} distribution. Plot correlations between features in this {dataset.get('domain', 'domain')} dataset. Create 2-3 meaningful domain-specific plots for {topic}.",
+    "Task 4: Model Training — train at least 2 ML models best suited for this {dataset.get('target_type', '')} problem using {dataset.get('name', '')} features. Evaluate with metrics appropriate for this target type.",
+    "Task 5: Model Comparison and {dataset.get('domain', 'Domain')} Insights — compare model performance on this specific dataset. Identify the most predictive features. Provide actionable {dataset.get('domain', 'domain')}-specific recommendations for {topic}."
   ],
   "preprocessing_requirements": [
     "Specific step 1 for THIS dataset",
@@ -4156,7 +4153,6 @@ class AIMLLibraryRequest(BaseModel):
     topic: str
     difficulty: str
     concepts: List[str] = []
-    num_questions: int = 1
     use_cache: bool = True
 
 
@@ -4177,118 +4173,114 @@ async def generate_aiml_library(request: AIMLLibraryRequest):
     async def _task():
         JOB_STORE[job_id]["status"] = "processing"
         try:
-            all_problems  = []
-            any_cache_hit = False
-            total_time    = 0.0
-            num_q = max(1, request.num_questions)
+            item_data = {k: v for k, v in data.items()}
+            cache_key = generate_cache_key("aiml_library", item_data)
 
-            for i in range(num_q):
-                item_data = {k: v for k, v in data.items() if k != "num_questions"}
-                cache_key = generate_cache_key("aiml_library", {**item_data, "qi": i})
+            if request.use_cache:
+                cached = get_from_cache(cache_key)
+                if cached:
+                    cached["cache_hit"] = True
+                    JOB_STORE[job_id] = {
+                        "status": "complete",
+                        "result": {"aiml_problems": [cached], "generation_time_seconds": 0, "cache_hit": True, "batched": False, "batch_size": 1},
+                        "error": None,
+                    }
+                    return
 
-                if request.use_cache:
-                    cached = get_from_cache(cache_key)
-                    if cached:
-                        any_cache_hit = True
-                        all_problems.append(cached)
-                        continue
+            matched = _match_dataset(request.topic, request.concepts, request.difficulty)
 
-                matched = _match_dataset(request.topic, request.concepts, request.difficulty)
+            if matched:
+                logger.info(f"Using library dataset: {matched['name']}")
+                prompt = _build_aiml_library_prompt(item_data, matched)
 
-                if matched:
-                    logger.info(f"Using library dataset: {matched['name']}")
-                    prompt = _build_aiml_library_prompt(item_data, matched)
+                try:
+                    messages = [
+                        {"role": "system", "content": "You are an expert AI/ML assessment designer. Return only valid JSON."},
+                        {"role": "user",   "content": prompt}
+                    ]
+                    text = TOKENIZER.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                    inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
+                    t0 = time.time()
+                    output = MODEL.generate(
+                        **inputs_tok,
+                        max_new_tokens=2000,
+                        temperature=0.6,
+                        do_sample=True,
+                        top_p=0.9,
+                        repetition_penalty=1.1,
+                        pad_token_id=TOKENIZER.eos_token_id
+                    )
+                    gen_time = time.time() - t0
+                    decoded  = TOKENIZER.decode(output[0], skip_special_tokens=True)
+                    decoded  = decoded.split("assistant")[-1].strip()
+                    result   = extract_json(decoded)
 
-                    try:
-                        messages = [
-                            {"role": "system", "content": "You are an expert AI/ML assessment designer. Return only valid JSON."},
-                            {"role": "user",   "content": prompt}
-                        ]
-                        text = TOKENIZER.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                        inputs_tok = TOKENIZER(text, return_tensors="pt").to(MODEL.device)
-                        t0 = time.time()
-                        output = MODEL.generate(
-                            **inputs_tok,
-                            max_new_tokens=2000,
-                            temperature=0.6,
-                            do_sample=True,
-                            top_p=0.9,
-                            repetition_penalty=1.1,
-                            pad_token_id=TOKENIZER.eos_token_id
-                        )
-                        gen_time = time.time() - t0
-                        decoded  = TOKENIZER.decode(output[0], skip_special_tokens=True)
-                        decoded  = decoded.split("assistant")[-1].strip()
-                        result   = extract_json(decoded)
+                    load_code = matched.get("load_code", "")
+                    starter   = (
+                        f"# Dataset: {matched['name']} ({matched['source']})\n"
+                        f"# Run this cell to load your data\n\n"
+                        f"{load_code}\n\n"
+                        f"# Your solution below\n"
+                    )
 
-                        load_code = matched.get("load_code", "")
-                        starter   = (
-                            f"# Dataset: {matched['name']} ({matched['source']})\n"
-                            f"# Run this cell to load your data\n\n"
-                            f"{load_code}\n\n"
-                            f"# Your solution below\n"
-                        )
+                    problem = {
+                        "problemStatement":           result.get("problemStatement", ""),
+                        "tasks":                      result.get("tasks", []),
+                        "preprocessing_requirements": result.get("preprocessing_requirements", []),
+                        "expectedApproach":           result.get("expectedApproach", ""),
+                        "evaluationCriteria":         result.get("evaluationCriteria", []),
+                        "difficulty":                 result.get("difficulty", request.difficulty),
+                        "bloomLevel":                 result.get("bloomLevel", "Apply"),
+                        "dataset": {
+                            "catalog_id":  matched.get("id", ""),
+                            "name":        matched.get("name", ""),
+                            "source":      matched.get("source", ""),
+                            "description": matched.get("description", ""),
+                            "domain":      matched.get("domain", ""),
+                            "size":        matched.get("size", ""),
+                            "target":      matched.get("target", ""),
+                            "target_type": matched.get("target_type", ""),
+                            "load_code":   load_code,
+                            "direct_load": True,
+                            "storage_type": "library",
+                            "file_id":     None,
+                        },
+                        "starter_code":      {"python3": starter},
+                        "dataset_load_code": load_code,
+                        "dataset_strategy":  "library",
+                        "generation_time_seconds": round(gen_time, 3),
+                        "cache_hit": False,
+                    }
+                    save_to_cache(cache_key, problem)
+                    JOB_STORE[job_id] = {
+                        "status": "complete",
+                        "result": {"aiml_problems": [problem], "generation_time_seconds": round(gen_time, 3), "cache_hit": False, "batched": False, "batch_size": 1},
+                        "error": None,
+                    }
 
-                        problem = {
-                            "problemStatement":           result.get("problemStatement", ""),
-                            "tasks":                      result.get("tasks", []),
-                            "preprocessing_requirements": result.get("preprocessing_requirements", []),
-                            "expectedApproach":           result.get("expectedApproach", ""),
-                            "evaluationCriteria":         result.get("evaluationCriteria", []),
-                            "difficulty":                 result.get("difficulty", request.difficulty),
-                            "bloomLevel":                 result.get("bloomLevel", "Apply"),
-                            "dataset": {
-                                "catalog_id":  matched.get("id", ""),
-                                "name":        matched.get("name", ""),
-                                "source":      matched.get("source", ""),
-                                "description": matched.get("description", ""),
-                                "domain":      matched.get("domain", ""),
-                                "size":        matched.get("size", ""),
-                                "target":      matched.get("target", ""),
-                                "target_type": matched.get("target_type", ""),
-                                "load_code":   load_code,
-                                "direct_load": True,
-                                "storage_type": "library",
-                                "file_id":     None,
-                            },
-                            "starter_code":      {"python3": starter},
-                            "dataset_load_code": load_code,
-                            "dataset_strategy":  "library",
-                            "generation_time_seconds": round(gen_time, 3),
-                            "cache_hit": False,
-                        }
-                        save_to_cache(cache_key, problem)
-                        total_time += gen_time
-                        all_problems.append(problem)
-
-                    except Exception as e:
-                        logger.error(f"Library generation failed: {e} — falling back to synthetic")
-                        token_limit = calculate_aiml_token_limit(item_data)
-                        result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
-                        result["dataset_strategy"] = "synthetic_fallback"
-                        save_to_cache(cache_key, result)
-                        total_time += result.get("generation_time_seconds", 0)
-                        all_problems.append(result)
-                else:
-                    logger.info("No catalog match — using synthetic generation")
+                except Exception as e:
+                    logger.error(f"Library generation failed: {e} — falling back to synthetic")
                     token_limit = calculate_aiml_token_limit(item_data)
                     result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
-                    result["dataset_strategy"] = "synthetic"
+                    result["dataset_strategy"] = "synthetic_fallback"
                     save_to_cache(cache_key, result)
-                    total_time += result.get("generation_time_seconds", 0)
-                    all_problems.append(result)
+                    JOB_STORE[job_id] = {
+                        "status": "complete",
+                        "result": {"aiml_problems": [result], "generation_time_seconds": round(result.get("generation_time_seconds", 0), 3), "cache_hit": False, "batched": False, "batch_size": 1},
+                        "error": None,
+                    }
+            else:
+                logger.info("No catalog match — using synthetic generation")
+                token_limit = calculate_aiml_token_limit(item_data)
+                result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
+                result["dataset_strategy"] = "synthetic"
+                save_to_cache(cache_key, result)
+                JOB_STORE[job_id] = {
+                    "status": "complete",
+                    "result": {"aiml_problems": [result], "generation_time_seconds": round(result.get("generation_time_seconds", 0), 3), "cache_hit": False, "batched": False, "batch_size": 1},
+                    "error": None,
+                }
 
-            JOB_STORE[job_id] = {
-                "status": "complete",
-                "result": {
-                    "aiml_problems": all_problems,
-                    "generation_time_seconds": round(total_time, 3),
-                    "cache_hit": any_cache_hit,
-                    "batched": True,
-                    "batch_size": request.num_questions,
-                },
-                "error": None,
-            }
         except Exception as e:
             STATS["errors"] += 1
             JOB_STORE[job_id] = {"status": "failed", "result": None, "error": str(e)}
