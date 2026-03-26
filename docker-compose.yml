@@ -1,5 +1,5 @@
 version: '3.8'
- 
+
 services:
 
   qwen-model:
@@ -15,6 +15,7 @@ services:
     volumes:
 
       - ~/.cache/huggingface:/root/.cache/huggingface
+      - /mnt/c/Users/adity/documents/gisul/gisul_model/assets:/app/assets
 
     deploy:
 
@@ -31,7 +32,7 @@ services:
               capabilities: [gpu]
 
     restart: unless-stopped
- 
+
   qwen-frontend:
 
     image: gisul/qwen-frontend:latest
@@ -51,4 +52,4 @@ services:
       - qwen-model
 
     restart: unless-stopped
- 
+

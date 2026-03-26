@@ -2728,13 +2728,24 @@ RULES:
 - target variable MUST NOT appear in features list.
 - Do NOT generate any data rows — dataset will be generated programmatically.
 - ALL fields below are REQUIRED. Do not leave any field empty or as a placeholder.
+- tasks and preprocessing_requirements MUST be specific to the features you define above.
+  Do NOT write generic task text — reference the ACTUAL feature names and domain context of {request_data['topic']}.
+
+TASK GENERATION RULES — tasks must be specific to THIS dataset and topic, NOT generic:
+- Task 1: Data loading must name the exact synthetic features you designed above.
+- Task 2: Preprocessing must call out WHICH specific features need encoding/normalization by name.
+- Task 3: EDA must suggest plots that make sense for THIS domain (e.g. for churn: tenure vs churn rate, for medical: correlation heatmap of lab values).
+- Task 4: Model selection must justify algorithms for the specific target_type you chose.
+- Task 5: Insights must be domain-specific to the topic (e.g. for fraud: flag high-risk merchant categories, for HR: identify top drivers of attrition).
+- preprocessing_requirements must list ACTUAL feature names from your features list, not generic placeholders.
+- evaluationCriteria must match the target_type: classification → Accuracy/F1/ROC-AUC, regression → RMSE/MAE/R².
 
 Return ONLY this JSON (no data array):
 {{
-  "problemStatement": "Detailed real-world problem description for this specific topic",
+  "problemStatement": "Detailed real-world problem description for {request_data['topic']} — explain the business/research context, who uses this, and what decision it enables.",
   "dataset": {{
-    "description": "What this dataset represents in real business/research context",
-    "features": ["realistic_name_1", "realistic_name_2", "...10-15 names"],
+    "description": "What this dataset represents in real business/research context for {request_data['topic']}",
+    "features": ["realistic_name_1", "realistic_name_2", "...10-15 names specific to {request_data['topic']}"],
     "feature_types": {{
       "realistic_name_1": "numerical (continuous, range: 20 to 150)",
       "realistic_name_2": "categorical (values: monthly, annual, weekly)"
@@ -2745,19 +2756,19 @@ Return ONLY this JSON (no data array):
     "size": "150 samples"
   }},
   "tasks": [
-    "Task 1: Data Loading and Exploration — load the {request_data['topic']} dataset into a DataFrame. Display shape, first 10 rows, check missing values per feature, data types, and descriptive statistics. Identify any data quality issues specific to this domain.",
-    "Task 2: Data Preprocessing — handle missing values found in Task 1. Encode categorical features specific to this dataset. Normalize/standardize numerical features relevant to {request_data['topic']}. Split 80/20 train/test with stratification if classification.",
-    "Task 3: Exploratory Data Analysis — visualize the target variable distribution. Plot top feature correlations. Create at least 2 domain-specific plots relevant to {request_data['topic']} using matplotlib/seaborn.",
-    "Task 4: Model Training — train at least 2 ML models best suited for this specific {request_data['topic']} problem type. Justify your model choices. Evaluate with metrics appropriate for this target type.",
-    "Task 5: Model Comparison and Domain Insights — compare model performance. Identify the most predictive features for {request_data['topic']}. Provide actionable business/domain recommendations based on model findings."
+    "Task 1: Data Loading and Exploration — [write a specific task referencing the actual feature names you chose above for {request_data['topic']}. Mention what domain-specific patterns to look for.]",
+    "Task 2: Data Preprocessing — [write a specific task calling out WHICH of your features need encoding, WHICH need normalization, and whether stratification is needed based on target_type]",
+    "Task 3: Exploratory Data Analysis — [write 2-3 specific plot ideas that make sense for {request_data['topic']} — name the actual features to plot against each other]",
+    "Task 4: Model Training — [name 2 specific algorithms justified for this target_type and domain. Specify which metrics to evaluate.]",
+    "Task 5: Domain Insights — [write domain-specific business questions to answer, referencing the actual features and the real-world context of {request_data['topic']}]"
   ],
   "preprocessing_requirements": [
-    "First specific preprocessing step required for THIS dataset (e.g. encode contract_type using LabelEncoder)",
-    "Second specific step (e.g. normalize monthly_bill and tenure_months using MinMaxScaler)",
-    "Third specific step (e.g. handle class imbalance using SMOTE or class_weight=balanced)"
+    "Specific step naming an ACTUAL feature from the features list above (e.g. encode contract_type using LabelEncoder)",
+    "Specific step naming another ACTUAL feature (e.g. normalize monthly_bill and tenure_months with MinMaxScaler)",
+    "Specific step for data quality or imbalance relevant to this dataset (e.g. handle class imbalance with SMOTE)"
   ],
-  "expectedApproach": "Name 2-3 specific ML algorithms suited for this problem and explain WHY (e.g. Logistic Regression for interpretability, Random Forest for handling non-linear interactions between features).",
-  "evaluationCriteria": ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"],
+  "expectedApproach": "Name 2-3 specific ML algorithms suited for {request_data['topic']} and explain WHY each fits this target_type and feature set.",
+  "evaluationCriteria": ["metric appropriate for this target_type", "second metric", "third metric"],
   "difficulty": "{request_data['difficulty']}"
 }}
 
