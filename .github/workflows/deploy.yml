@@ -1,69 +1,116 @@
 name: Build and Deploy
-
+ 
 on:
+
   push:
+
     branches:
+
       - dev
-
+ 
 jobs:
+
   build:
+
     runs-on: ubuntu-latest
-
+ 
     steps:
-      - uses: actions/checkout@v4
 
+      - uses: actions/checkout@v4
+ 
       - uses: docker/login-action@v3
+
         with:
+
           username: ${{ secrets.DOCKERHUB_USERNAME }}
+
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+ 
       - name: Build and push backend
+
         uses: docker/build-push-action@v5
+
         with:
+
           context: .
+
           file: ./backend/Dockerfile
+
           push: true
+
           tags: gisul/qwen-api:latest
-
+ 
       - name: Build and push frontend
+
         uses: docker/build-push-action@v5
+
         with:
+
           context: ./frontend
+
           push: true
+
           tags: gisul/qwen-frontend:latest
-
+ 
   deploy:
+
     needs: build
+
     runs-on: self-hosted
-
+ 
     steps:
+
       - uses: actions/checkout@v4
-
+ 
       - name: Login to Docker Hub
+
         run: |
-          mkdir -p /tmp/docker-config
-          echo '{"credsStore":""}' > /tmp/docker-config/config.json
+
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
+
           --username "${{ secrets.DOCKERHUB_USERNAME }}" \
+
           --password-stdin
-        env:
-          DOCKER_CONFIG: /tmp/docker-config
-
+ 
       - name: Deploy containers
+
         run: |
-          cp docker-compose.yml /mnt/c/Users/adity/documents/gisul/gisul_model/docker-compose.yml
 
-          cd /mnt/c/Users/adity/documents/gisul/gisul_model
+          # Navigate to deployment directory
 
-          docker compose down --remove-orphans 2>/dev/null || true
+          DEPLOY_DIR="/mnt/c/Users/adity/documents/gisul/gisul_model"
+
+          mkdir -p "$DEPLOY_DIR"
+
+          # Copy docker-compose.yml
+
+          cp docker-compose.yml "$DEPLOY_DIR/"
+
+          cd "$DEPLOY_DIR"
+
+          # Stop and remove all old containers and networks
+
+          docker compose down -v 2>/dev/null || true
+
           docker rm -f qwen-model qwen-frontend 2>/dev/null || true
-          docker network rm gisul_model_default 2>/dev/null || true
 
-          sleep 2
+          docker network rm gisul_model_default gisul_model_frontend 2>/dev/null || true
+
+          # Wait for cleanup
+
+          sleep 3
+
+          # Pull latest images
 
           docker pull gisul/qwen-api:latest
+
           docker pull gisul/qwen-frontend:latest
 
-          docker compose up -d --remove-orphans
-        env:
-          DOCKER_CONFIG: /tmp/docker-config
+          # Start containers
+
+          docker compose up -d
+
+          # Verify containers are running
+
+          docker compose ps
+ 

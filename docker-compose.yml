@@ -1,27 +1,54 @@
+version: '3.8'
+ 
 services:
-  qwen-model:
-    image: gisul/qwen-api:latest
-    container_name: qwen-model
-    ports:
-      - '9000:9000'
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    restart: unless-stopped
 
-  qwen-frontend:
-    image: gisul/qwen-frontend:latest
-    container_name: qwen-frontend
+  qwen-model:
+
+    image: gisul/qwen-api:latest
+
+    container_name: qwen-model
+
     ports:
-      - '8501:8501'
-    environment:
-      - API_BASE=http://qwen-model:9000/api/v1
-    depends_on:
-      - qwen-model
+
+      - '9000:9000'
+
+    volumes:
+
+      - ~/.cache/huggingface:/root/.cache/huggingface
+
+    deploy:
+
+      resources:
+
+        reservations:
+
+          devices:
+
+            - driver: nvidia
+
+              count: all
+
+              capabilities: [gpu]
+
     restart: unless-stopped
+ 
+  qwen-frontend:
+
+    image: gisul/qwen-frontend:latest
+
+    container_name: qwen-frontend
+
+    ports:
+
+      - '8501:8501'
+
+    environment:
+
+      - API_BASE=http://qwen-model:9000/api/v1
+
+    depends_on:
+
+      - qwen-model
+
+    restart: unless-stopped
+ 
