@@ -27,9 +27,9 @@ import os
 import numpy as np
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CATALOG_FILE    = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\aiml-data\aiml_dataset_catalog.json"
-FAISS_INDEX     = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\aiml-data\aiml_faiss.index"
-METADATA_FILE   = r"C:\Users\adity\Documents\Gisul\gisul_model\assests\aiml-data\aiml_catalog_metadata.json"
+CATALOG_FILE = "/mnt/c/Users/adity/Documents/Gisul/gisul_model/assets/aiml-data/aiml_dataset_catalog.json"
+FAISS_INDEX   = "/mnt/c/Users/adity/Documents/Gisul/gisul_model/assets/aiml-data/aiml_faiss.index"
+METADATA_FILE = "/mnt/c/Users/adity/Documents/Gisul/gisul_model/assets/aiml-data/aiml_catalog_metadata.json"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 BATCH_SIZE      = 32
 # ──────────────────────────────────────────────────────────────────────────────
@@ -63,20 +63,30 @@ def build_search_text(dataset: dict) -> str:
     if domain:
         parts.append(domain)
 
+    # Category (tabular / nlp / time-series / etc.)
+    category = dataset.get("category", "")
+    if category:
+        parts.append(category)
+
     # Tags — very important for matching
     tags = dataset.get("tags", [])
     if tags:
         parts.append(" ".join(tags))
+
+    # Use-case — captures what the dataset is used for
+    use_case = dataset.get("use_case", "")
+    if use_case:
+        parts.append(use_case[:200])
 
     # Description — semantic meaning
     description = dataset.get("description", "")
     if description:
         parts.append(description[:300])
 
-    # Features description
-    features_desc = dataset.get("features_description", "")
-    if features_desc:
-        parts.append(features_desc[:150])
+    # Features info (new field — replaces features_description)
+    features_info = dataset.get("features_info", "")
+    if features_info:
+        parts.append(features_info[:150])
 
     # Target type
     target_type = dataset.get("target_type", "")

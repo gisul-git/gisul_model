@@ -159,11 +159,14 @@ st.subheader("🔧 Request Parameters")
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    num_questions = st.number_input(
-        "Number of Questions / Items",
-        min_value=1, max_value=20, value=3,
-        help="How many items to generate in a single request. (Not applicable for DSA question endpoint)"
-    )
+    if endpoint not in ("generate-aiml", "generate-aiml-library", "generate-dsa-question"):
+        num_questions = st.number_input(
+            "Number of Questions / Items",
+            min_value=1, max_value=20, value=3,
+            help="How many items to generate in a single request."
+        )
+    else:
+        num_questions = 1
 
 if needs_topics_fields:
     col1b, col2b = st.columns(2)
@@ -245,14 +248,15 @@ def build_payload() -> dict:
         base.update({"topic": topic, "difficulty": difficulty, "database_type": database_type,
                      "job_role": job_role, "experience_years": experience_years})
     elif endpoint == "generate-aiml":
-        base.update({"topic": topic, "difficulty": difficulty})
+        base = {"use_cache": use_cache, "topic": topic, "difficulty": difficulty}
     elif endpoint == "generate-aiml-library":
         concepts_list = [c.strip() for c in concepts_input.split(",") if c.strip()]
-        base.update({
+        base = {
+            "use_cache":  use_cache,
             "topic":      topic,
             "difficulty": difficulty,
             "concepts":   concepts_list,
-        })
+        }
     elif endpoint == "generate-dsa-question":
         concepts_list = [c.strip() for c in concepts_input.split(",") if c.strip()]
         base = {
@@ -391,12 +395,168 @@ def render_aiml_problem(p: dict, index: int):
         with st.expander("📊 Dataset Details", expanded=True):
             st.write(f"**Description:** {dataset.get('description', '')}")
 
-            # Library dataset — show load code
+            # ── Library dataset: show full load code AND execute it live ──────
             if dataset.get("direct_load") and dataset.get("load_code"):
+                import_code = dataset.get("import_code", "")
+                load_code   = dataset["load_code"]
+                pip_install = dataset.get("pip_install", "")
+
+                # Build the full runnable code block to show
+                combined = f"{import_code}\n\n{load_code}" if import_code else load_code
                 st.markdown("**Load Code (run in notebook):**")
-                st.code(dataset["load_code"], language="python")
+                st.code(combined, language="python")
                 st.info("✅ This dataset loads directly from the library — no download needed.")
 
+                # ── Live preview: execute load_code and render DataFrame ──────
+                preview_key = f"df_preview_{index}_{dataset.get('catalog_id', 'ds')}"
+                if preview_key not in st.session_state:
+                    st.session_state[preview_key] = None   # not yet loaded
+                    st.session_state[preview_key + "_err"] = None
+
+                col_load, _ = st.columns([1, 3])
+                with col_load:
+                    load_btn = st.button(
+                        "▶ Load & Preview Dataset",
+                        key=f"load_btn_{index}_{dataset.get('catalog_id', 'ds')}",
+                        type="primary",
+                        use_container_width=True,
+                    )
+
+                if load_btn:
+                    with st.spinner("Loading dataset from library…"):
+                        try:
+                            # Standard imports always available in any library dataset
+                            exec_globals = {
+                                "pd": pd,
+                                "plt": plt,
+                            }
+                            # Inject source-specific imports
+                            source = dataset.get("source", "").lower()
+                            if source == "seaborn":
+                                import seaborn as _sns
+                                exec_globals["sns"] = _sns
+                            elif source in ("sklearn", "openml"):
+                                import sklearn.datasets as _skds
+                                from sklearn.datasets import (
+                                    load_iris, load_breast_cancer, load_diabetes,
+                                    load_wine, load_digits, fetch_california_housing,
+                                    fetch_20newsgroups, fetch_olivetti_faces,
+                                    make_classification, make_regression,
+                                    make_blobs, make_moons, make_circles,
+                                    fetch_openml,
+                                )
+                                import numpy as _np
+                                exec_globals.update({
+                                    "load_iris": load_iris,
+                                    "load_breast_cancer": load_breast_cancer,
+                                    "load_diabetes": load_diabetes,
+                                    "load_wine": load_wine,
+                                    "load_digits": load_digits,
+                                    "fetch_california_housing": fetch_california_housing,
+                                    "fetch_20newsgroups": fetch_20newsgroups,
+                                    "fetch_olivetti_faces": fetch_olivetti_faces,
+                                    "make_classification": make_classification,
+                                    "make_regression": make_regression,
+                                    "make_blobs": make_blobs,
+                                    "make_moons": make_moons,
+                                    "make_circles": make_circles,
+                                    "fetch_openml": fetch_openml,
+                                    "np": _np,
+                                })
+                            elif source == "statsmodels":
+                                import statsmodels.api as _sm
+                                exec_globals["sm"] = _sm
+                            elif source == "keras":
+                                try:
+                                    from tensorflow import keras as _keras
+                                    exec_globals["keras"] = _keras
+                                except ImportError:
+                                    import keras as _keras
+                                    exec_globals["keras"] = _keras
+                            elif source == "nltk":
+                                import nltk as _nltk
+                                exec_globals["nltk"] = _nltk
+                            elif source == "huggingface":
+                                from datasets import load_dataset as _ld
+                                exec_globals["load_dataset"] = _ld
+
+                            # Run import_code first (e.g. "import seaborn as sns")
+                            if import_code.strip():
+                                exec(import_code, exec_globals)
+
+                            # Run load_code — suppress print() output visually
+                            import io, contextlib
+                            _buf = io.StringIO()
+                            with contextlib.redirect_stdout(_buf):
+                                exec(load_code, exec_globals)
+
+                            # Find the DataFrame — look for 'df' first, then any DataFrame
+                            loaded_df = None
+                            if "df" in exec_globals and isinstance(exec_globals["df"], pd.DataFrame):
+                                loaded_df = exec_globals["df"]
+                            else:
+                                for _v in exec_globals.values():
+                                    if isinstance(_v, pd.DataFrame):
+                                        loaded_df = _v
+                                        break
+
+                            if loaded_df is not None:
+                                st.session_state[preview_key] = loaded_df
+                                st.session_state[preview_key + "_err"] = None
+                            else:
+                                st.session_state[preview_key + "_err"] = (
+                                    "load_code ran successfully but no DataFrame (df) was found. "
+                                    "Copy the load code into your notebook to use manually."
+                                )
+                        except Exception as _e:
+                            st.session_state[preview_key + "_err"] = str(_e)
+
+                # Show loaded DataFrame or error
+                _loaded = st.session_state.get(preview_key)
+                _err    = st.session_state.get(preview_key + "_err")
+
+                if _err:
+                    st.warning(f"⚠️ Could not load in frontend: {_err}")
+                    st.caption("Use the load code above in your Jupyter notebook instead.")
+                elif _loaded is not None:
+                    st.success(f"✅ Loaded — {_loaded.shape[0]} rows × {_loaded.shape[1]} columns")
+                    st.markdown("**Preview (first 10 rows):**")
+                    st.dataframe(_loaded.head(10), use_container_width=True)
+
+                    # Stats summary
+                    with st.expander("📈 Dataset Statistics"):
+                        st.dataframe(_loaded.describe(include="all"), use_container_width=True)
+
+                    # Missing values
+                    _missing = _loaded.isnull().sum()
+                    _missing = _missing[_missing > 0]
+                    if not _missing.empty:
+                        with st.expander(f"⚠️ Missing Values ({_missing.sum()} total)"):
+                            st.dataframe(
+                                _missing.rename("missing_count").to_frame(),
+                                use_container_width=True,
+                            )
+                    else:
+                        st.caption("✅ No missing values detected.")
+
+                    # Target distribution
+                    target_col = dataset.get("target", "")
+                    if target_col and target_col in _loaded.columns:
+                        with st.expander(f"🎯 Target Distribution — `{target_col}`"):
+                            _vc = _loaded[target_col].value_counts()
+                            st.bar_chart(_vc)
+
+                    # Download button
+                    _csv = _loaded.to_csv(index=False)
+                    st.download_button(
+                        label="⬇️ Download Dataset as CSV",
+                        data=_csv,
+                        file_name=f"{dataset.get('catalog_id', 'dataset')}.csv",
+                        mime="text/csv",
+                        key=f"dl_live_{index}_{dataset.get('catalog_id', 'ds')}",
+                    )
+
+            # ── Metadata columns ─────────────────────────────────────────────
             c1, c2 = st.columns(2)
             with c1:
                 st.write(f"**Source:** `{dataset.get('source', '—')}`")
@@ -423,10 +583,13 @@ def render_aiml_problem(p: dict, index: int):
 
             if dataset.get("features"):
                 st.write(f"**Features ({len(dataset['features'])}):** {', '.join(f'`{f}`' for f in dataset['features'])}")
+            if dataset.get("features_info"):
+                st.write(f"**Features Info:** {dataset['features_info']}")
             if dataset.get("feature_types"):
                 st.write("**Feature Types:**")
                 st.json(dataset["feature_types"])
 
+            # ── Synthetic dataset rows (non-library) ─────────────────────────
             data_rows = dataset.get("data", [])
             if data_rows:
                 st.write(f"**Dataset ({len(data_rows)} rows):**")
@@ -435,9 +598,7 @@ def render_aiml_problem(p: dict, index: int):
                     st.dataframe(df, use_container_width=True)
                 except Exception:
                     st.json(data_rows[:5])
-            elif dataset.get("direct_load"):
-                st.info("Dataset loads at runtime via load_code — no rows stored.")
-            else:
+            elif not dataset.get("direct_load"):
                 st.warning("No dataset rows generated.")
 
     # Starter code (for library endpoint)

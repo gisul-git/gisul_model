@@ -1,22 +1,22 @@
 name: Build and Deploy
-
+ 
 on:
   push:
     branches:
       - dev
-
+ 
 jobs:
   build:
     runs-on: ubuntu-latest
-
+ 
     steps:
       - uses: actions/checkout@v4
-
+ 
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+ 
       - name: Build and push backend
         uses: docker/build-push-action@v5
         with:
@@ -24,47 +24,44 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: gisul/qwen-api:latest
-
+ 
       - name: Build and push frontend
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
           tags: gisul/qwen-frontend:latest
-
+ 
   deploy:
     needs: build
     runs-on: self-hosted
-
+ 
     steps:
       - uses: actions/checkout@v4
-
+ 
       - name: Login to Docker Hub
         run: |
           mkdir -p /tmp/docker-config
           echo '{"credsStore":""}' > /tmp/docker-config/config.json
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
-          --username "${{ secrets.DOCKERHUB_USERNAME }}" \
-          --password-stdin
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
         env:
           DOCKER_CONFIG: /tmp/docker-config
-
+ 
       - name: Deploy containers
         run: |
-          # Always sync docker-compose.yml from repo to office machine
           cp docker-compose.yml /mnt/c/Users/adity/documents/gisul/gisul_model/docker-compose.yml
-
           cd /mnt/c/Users/adity/documents/gisul/gisul_model
-
-          # Force remove existing containers and network
+ 
+          docker compose down --remove-orphans 2>/dev/null || true
           docker rm -f qwen-model qwen-frontend 2>/dev/null || true
           docker network rm gisul_model_default 2>/dev/null || true
-
-          # Pull latest images
+ 
+          sleep 2
+ 
           docker pull gisul/qwen-api:latest
           docker pull gisul/qwen-frontend:latest
-
-          # Start fresh
-          docker compose up -d --remove-orphans --force-recreate
+ 
+          docker compose up -d --remove-orphans
+          docker compose ps
         env:
           DOCKER_CONFIG: /tmp/docker-config
