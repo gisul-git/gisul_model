@@ -1,0 +1,890 @@
+[
+  {
+    "topic": "Customer Segmentation",
+    "concept": "time series",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "The Rossmann Store Sales Forecasting dataset provides detailed information about the sales performance of over 1000 drug stores across Germany. Given the diverse range of factors influencing sales such as store type, assortment, competition distance, and promotional activities, the goal is to segment customers based on their purchasing behavior to optimize marketing strategies and improve sales forecasts. This task requires advanced time-series analysis techniques tailored to the specific features of this dataset.",
+          "tasks": [
+            "Task 1: Data Loading and Exploration \u2014 load the dataset for 'Customer Segmentation'. Display shape, dtypes, first 10 rows, and per-column missing value counts. Report descriptive statistics and identify any data quality issues specific to this domain.",
+            "Task 2: Data Preprocessing \u2014 handle missing values (impute or drop as appropriate). Encode categorical features using LabelEncoder or OneHotEncoder as appropriate. Scale numerical features using StandardScaler or MinMaxScaler. Use a standard 80/20 split.",
+            "Task 3: EDA for Clustering \u2014 plot pairwise scatter plots of key features coloured by any available labels. Compute and visualise the correlation matrix. Use PCA or t-SNE to project features into 2D and look for natural groupings relevant to 'Customer Segmentation'.",
+            "Task 4: Clustering \u2014 apply K-Means clustering. Use the Elbow method and Silhouette score to choose the optimal number of clusters. Also try DBSCAN as an alternative. Visualise clusters using PCA or t-SNE.",
+            "Task 5: Model Comparison and Domain Insights \u2014 Use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
+          ],
+          "preprocessing_requirements": [
+            "Impute missing values in 'DayOfWeek', 'Promo', 'StateHoliday', 'SchoolHoliday' using mode or median imputation.",
+            "Encode 'StoreType', 'Assortment', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear', 'Promo2StartMonth', 'Promo2StartYear' using OneHotEncoder.",
+            "Scale 'Sales', 'CompetitionDistance', 'CompetitionOpenSinceMonth', 'CompetitionOpenSinceYear', 'Promo2StartMonth', 'Promo2StartYear' using StandardScaler."
+          ],
+          "expectedApproach": "For this dataset, consider using Gaussian Mixture Models (GMM) and Hierarchical Clustering due to its ability to handle non-linear relationships and complex cluster shapes. Additionally, DBSCAN can be used to find outliers and irregularly shaped clusters.",
+          "evaluationCriteria": [
+            "silhouette_score",
+            "elbow_method_score",
+            "shap_value_explanation"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "openml-retail-sales",
+            "name": "Rossmann Store Sales Forecasting",
+            "source": "openml",
+            "description": "Rossmann drug store sales dataset with historical sales data from over 1000 stores across Germany. Contains store type, assortment, competition distance, promotional periods, school/state holidays, and day of week. Used for forecasting daily sales \u2014 a realistic retail time-series regression problem from a Kaggle competition.",
+            "domain": "Retail",
+            "size": "1017209 rows x 9 features (sample recommended)",
+            "target": "Sales",
+            "target_type": "continuous",
+            "load_code": "data = fetch_openml(data_id=45567, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['Sales'].describe())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Rossmann Store Sales Forecasting (openml)\n# Run this cell to load your data\n\ndata = fetch_openml(data_id=45567, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['Sales'].describe())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "data = fetch_openml(data_id=45567, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['Sales'].describe())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 31.216,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 31.216,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Machine Translation",
+    "concept": "reinforcement learning",
+    "difficulty": "easy",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "In the healthcare domain, accurate classification of brain tumors from MRI scans is crucial for timely diagnosis and treatment planning. This dataset contains 7023 MRI images classified into four categories: no tumor, glioma, meningioma, and pituitary tumor. The goal is to develop a machine learning model that can classify these MRI images accurately, which will aid in early detection and proper management of brain tumors.",
+          "tasks": [
+            "Task 1: Data Loading and Inspection \u2014 load the dataset. Display sample images from each class (at least 5 per class). Report the total number of images, image dimensions (244x244), color channels (RGB), and class distribution. Check for any corrupted or unusually sized images.",
+            "Task 2: Image Preprocessing \u2014 resize all images to a consistent size (e.g., 224x224). Normalize pixel values to [0, 1]. Split 80/20 train/test with stratification based on the class labels.",
+            "Task 3: Visual EDA \u2014 display a grid of sample images from each class. Plot the class distribution as a bar chart. For tabular metadata (if available), plot distributions of key attributes such as patient age or gender. Visualize mean and variance images per class.",
+            "Task 4: Model Training \u2014 train a simple CNN (2\u20133 conv layers) from scratch. Evaluate using a confusion matrix and one primary metric (Accuracy).",
+            "Task 5: Model Comparison and Domain Insights \u2014 identify the top 3 most important features using the model's built-in feature importance or coefficients."
+          ],
+          "preprocessing_requirements": [
+            "Resize all images to 224x224",
+            "Normalize pixel values to [0, 1]",
+            "Perform stratified split for training and testing"
+          ],
+          "expectedApproach": "Use Convolutional Neural Networks (CNNs) due to their effectiveness in handling image data. Specifically, a ResNet or VGG model pre-trained on ImageNet could be fine-tuned for better performance on this dataset, given its large number of classes and diverse image characteristics.",
+          "evaluationCriteria": [
+            "accuracy",
+            "confusion_matrix"
+          ],
+          "difficulty": "easy",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-brain-tumor-mri",
+            "name": "Brain Tumor MRI Classification",
+            "source": "huggingface",
+            "description": "Brain MRI scan dataset for tumour classification into 4 categories: no tumour, glioma, meningioma, and pituitary tumour. Contains 7023 MRI images sourced from Figshare, SARTAJ, and Br35H datasets. A medical imaging benchmark for CNN and transfer learning using ResNet or VGG models pre-trained on ImageNet.",
+            "domain": "Healthcare",
+            "size": "7023 MRI images, 4 classes",
+            "target": "label",
+            "target_type": "multiclass",
+            "load_code": "dataset = load_dataset('Falah/Alzheimer_MRI', split='train[:200]')\nprint(dataset)\nprint(dataset[0].keys())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Brain Tumor MRI Classification (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('Falah/Alzheimer_MRI', split='train[:200]')\nprint(dataset)\nprint(dataset[0].keys())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('Falah/Alzheimer_MRI', split='train[:200]')\nprint(dataset)\nprint(dataset[0].keys())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 24.582,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 24.582,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Medical Diagnosis",
+    "concept": "anomaly detection",
+    "difficulty": "easy",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Develop a predictive model to diagnose diabetes in Pima Indian women based on their medical records. This dataset contains various physiological measurements that can be used to predict if a patient has diabetes, which is crucial for early intervention and treatment.",
+          "tasks": [
+            "Task 1: Data Loading and Exploration \u2014 load the Pima Indians Diabetes dataset. Display shape, dtypes, first 10 rows, and per-column missing value counts. Report descriptive statistics and identify any data quality issues specific to this domain such as zero-values in BloodPressure and BMI.",
+            "Task 2: Data Preprocessing \u2014 handle missing values (impute or drop as appropriate). Encode categorical features using LabelEncoder or OneHotEncoder as appropriate. Scale numerical features using StandardScaler or MinMaxScaler. Use stratified split for classification. Address class imbalance using SMOTE or class_weight='balanced'.",
+            "Task 3: Exploratory Data Analysis \u2014 Plot distributions of key clinical features (e.g., Pregnancies, BMI) split by outcome. Visualise correlation heatmap of lab values including Glucose, BloodPressure, SkinThickness, Insulin, and DiabetesPedigreeFunction.",
+            "Task 4: Model Training \u2014 Train a single baseline model (e.g., Logistic Regression or Decision Tree). Report accuracy on test set. Use class_weight='balanced' or SMOTE to handle class imbalance. Evaluate using a confusion matrix and one primary metric (Accuracy or ROC-AUC).",
+            "Task 5: Model Comparison and Domain Insights \u2014 Identify the top 3 most important features using the model's built-in feature importance or coefficients."
+          ],
+          "preprocessing_requirements": [
+            "Impute missing values in BloodPressure and BMI using median imputation.",
+            "Encode categorical variables like Pregnancies and DiabetesPedigreeFunction using OneHotEncoder.",
+            "Scale numerical features such as Glucose, Insulin, and Age using StandardScaler."
+          ],
+          "expectedApproach": "Logistic Regression and Random Forest are suitable for this binary classification task. Logistic Regression is simple and interpretable, while Random Forest provides better performance with feature importance scores.",
+          "evaluationCriteria": [
+            "accuracy",
+            "roc_auc_score",
+            "precision",
+            "recall"
+          ],
+          "difficulty": "easy",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "openml-pima-diabetes",
+            "name": "Pima Indians Diabetes Dataset",
+            "source": "openml",
+            "description": "Pima Indians Diabetes dataset from the National Institute of Diabetes and Digestive and Kidney Diseases. Contains diagnostic measurements from 768 female patients of Pima Indian heritage aged 21+. The target is whether the patient has diabetes. A classic medical ML benchmark known for its class imbalance and zero-value anomalies in features like BloodPressure and BMI.",
+            "domain": "Healthcare",
+            "size": "768 rows x 9 features",
+            "target": "class",
+            "target_type": "binary",
+            "load_code": "data = fetch_openml(data_id=37, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['class'].value_counts())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Pima Indians Diabetes Dataset (openml)\n# Run this cell to load your data\n\ndata = fetch_openml(data_id=37, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['class'].value_counts())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "data = fetch_openml(data_id=37, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['class'].value_counts())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 24.474,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 24.474,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Face Recognition",
+    "concept": "reinforcement learning",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Develop a robust face recognition system capable of accurately identifying individuals from a dataset of 400 facial images taken under various conditions such as differing lighting, facial expressions, and accessories. This dataset consists of 4096 pixel intensity features for each 64x64 grayscale image, where the goal is to classify faces into one of 40 classes based on the subject identity.",
+          "tasks": [
+            "Task 1: Data Loading and Inspection \u2014 load the dataset. Display sample images from each class (at least 5 per class). Report the total number of images, image dimensions (64x64 pixels), colour channels (grayscale), and class distribution. Check for any corrupted or unusually sized images.",
+            "Task 2: Image Preprocessing and Augmentation \u2014 resize all images to 64x64 pixels and normalise pixel values between 0 and 1. Apply data augmentation techniques such as random flips, rotations, and zooms to the training set only. Split the dataset into 80% training and 20% testing sets with stratified sampling. Report class balance after splitting.",
+            "Task 3: Visual EDA \u2014 display a grid of sample images from each class. Plot the class distribution as a bar chart. For tabular metadata (if available), plot distributions of key attributes. Visualise mean and variance images per class.",
+            "Task 4: Model Training \u2014 fine-tune a pretrained model like ResNet-50 using transfer learning. Freeze the base layers and train only the classification head first, then unfreeze and fine-tune end-to-end. Evaluate with a full metric suite including accuracy, precision, recall, F1-score, and confusion matrix. Perform cross-validation (k=5) instead of a single train/test split. Plot learning curves to diagnose bias and variance issues.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain, such as how certain facial features contribute to the identification process.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with a confidence score. Discuss what monitoring would be needed in production, considering factors like model performance degradation over time and environmental changes affecting image quality."
+          ],
+          "preprocessing_requirements": [
+            "Resize all images to 64x64 pixels",
+            "Normalise pixel values between 0 and 1",
+            "Apply data augmentation techniques such as random flips, rotations, and zooms to the training set only",
+            "Perform stratified sampling for splitting the dataset into 80% training and 20% testing sets"
+          ],
+          "expectedApproach": "Use a deep learning approach with transfer learning on a model like ResNet-50. This is suitable because it can handle high-dimensional image data effectively and has been pre-trained on large datasets which helps in reducing overfitting given the limited size of the Olivetti Faces dataset. Another approach could be using a CNN architecture specifically designed for face recognition tasks, leveraging its ability to capture spatial hierarchies in images.",
+          "evaluationCriteria": [
+            "accuracy",
+            "precision",
+            "recall",
+            "F1-score",
+            "confusion_matrix"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "sklearn-fetch-olivetti",
+            "name": "Olivetti Faces Recognition",
+            "source": "sklearn",
+            "description": "A dataset of 400 facial images taken from 40 subjects under varying lighting, facial expressions, and accessories. Each 64x64 grayscale image is flattened into 4096 features. Used for face recognition, dimensionality reduction, and unsupervised learning.",
+            "domain": "Computer Vision",
+            "size": "400 rows x 4097 columns",
+            "target": "person_id",
+            "target_type": "multiclass",
+            "load_code": "data = fetch_olivetti_faces()\ndf = pd.DataFrame(data.data)\ndf['target'] = data.target\nprint(df.shape)\nprint(df['target'].value_counts())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Olivetti Faces Recognition (sklearn)\n# Run this cell to load your data\n\ndata = fetch_olivetti_faces()\ndf = pd.DataFrame(data.data)\ndf['target'] = data.target\nprint(df.shape)\nprint(df['target'].value_counts())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "data = fetch_olivetti_faces()\ndf = pd.DataFrame(data.data)\ndf['target'] = data.target\nprint(df.shape)\nprint(df['target'].value_counts())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 34.971,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 34.971,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Customer Segmentation",
+    "concept": "clustering",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "In the context of online banking services, there is a need to efficiently categorize customer inquiries into one of 77 specific intent categories. This classification will help automate customer support processes, reducing response times and improving customer satisfaction. Given the dataset 'Banking77 Intent Classification' sourced from HuggingFace, our objective is to develop a robust machine learning model capable of accurately predicting these intents based on customer queries.",
+          "tasks": [
+            "Task 1: Data Loading and Text Inspection \u2014 load the dataset. Display 5 sample texts per class/label. Report vocabulary size, average token length, class distribution, and language distribution if multilingual. Identify any HTML artefacts, special characters, or encoding issues.",
+            "Task 2: Text Preprocessing \u2014 clean text (lowercase, remove punctuation/HTML/stopwords). Tokenise using an appropriate tokeniser (word-level or subword). Apply TF-IDF vectorisation or tokenise for a transformer model. Split 80/20 train/test with stratification on the label.",
+            "Task 3: Text EDA \u2014 plot word frequency distributions per class using bar charts or word clouds. Visualise text length distributions. Plot the class label distribution. Identify the most discriminative words using TF-IDF scores.",
+            "Task 4: Model Training \u2014 fine-tune a pretrained transformer (e.g. bert-base-uncased or distilbert-base-uncased) for this task. Also train a TF-IDF + Logistic Regression baseline for comparison. Evaluate with full metric suite. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
+          ],
+          "preprocessing_requirements": [
+            "Convert all texts to lowercase before removing punctuation and stopwords.",
+            "Ensure that the tokenizer used can handle the diverse vocabulary sizes across classes.",
+            "Check for class imbalance and apply sampling techniques if necessary."
+          ],
+          "expectedApproach": "For this task, we recommend using BERT-based models such as `bert-base-uncased` due to their superior performance on similar NLP tasks. Additionally, a strong baseline could be established using a TF-IDF + Logistic Regression setup which is simpler but often effective for text classification problems. The choice of BERT ensures that contextual information within the text is captured, while the logistic regression provides a straightforward yet powerful method for comparison.",
+          "evaluationCriteria": [
+            "accuracy",
+            "f1_macro",
+            "roc_auc_score"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-banking77",
+            "name": "Banking77 Intent Classification",
+            "source": "huggingface",
+            "description": "Online banking customer service queries classified into 77 fine-grained intent categories. Used for intent detection, customer support automation, and few-shot NLP experiments.",
+            "domain": "Finance",
+            "size": "10003 train + 3080 test queries",
+            "target": "intent",
+            "target_type": "multiclass",
+            "load_code": "dataset = load_dataset('banking77')\ndf = pd.DataFrame(dataset['train'])\nprint(df.shape)\nprint(df['label'].value_counts().head(10))",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Banking77 Intent Classification (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('banking77')\ndf = pd.DataFrame(dataset['train'])\nprint(df.shape)\nprint(df['label'].value_counts().head(10))\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('banking77')\ndf = pd.DataFrame(dataset['train'])\nprint(df.shape)\nprint(df['label'].value_counts().head(10))",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 31.012,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 31.012,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Speech Recognition",
+    "concept": "time series",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Given the LibriSpeech ASR Corpus (Clean 100h), develop a robust speech recognition system capable of accurately transcribing clean audio recordings into text. This dataset contains high-quality spoken English from audiobooks, making it ideal for evaluating advanced speech processing techniques and machine learning models designed for automatic speech recognition (ASR).",
+          "tasks": [
+            "Task 1: Data Loading and Audio Inspection \u2014 load the dataset. Display the waveform and spectrogram of one sample per speaker ID. Report sampling rate (16kHz), clip duration distribution, and speaker ID balance. Check for silent clips or clipping artefacts.",
+            "Task 2: Audio Feature Extraction \u2014 extract MFCC features (13\u201340 coefficients) from each clip. Optionally extract mel-spectrograms for deep learning approaches. Normalise features. Split 80/20 with stratification based on speaker ID.",
+            "Task 3: Audio EDA \u2014 plot MFCC feature distributions per speaker ID. Visualise mel-spectrograms side by side for different speakers. Plot clip duration and sampling rate distributions.",
+            "Task 4: Model Training \u2014 train a Random Forest on MFCC features as a baseline. Also train a simple MLP or 1D CNN on MFCC sequences. Evaluate with accuracy, precision, recall, F1-score, and ROC-AUC. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain such as phonetic characteristics or speaker-specific features.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production to ensure continuous performance."
+          ],
+          "preprocessing_requirements": [
+            "Load the dataset using the appropriate library (e.g., torchaudio, librosa) and inspect the waveforms and spectrograms of one sample per speaker ID.",
+            "Extract MFCC features and normalise them to ensure consistent input across all samples. Stratify the split based on speaker ID to maintain balanced training and validation sets.",
+            "Check for imbalanced speaker IDs during preprocessing and address any issues through oversampling, undersampling, or SMOTE techniques."
+          ],
+          "expectedApproach": "Two specific ML algorithms suited for this exact dataset include Random Forest and Long Short-Term Memory (LSTM) networks. Random Forest is chosen due to its ability to handle non-linear relationships and provide interpretable results, while LSTM networks are suitable for sequential data like audio signals and can capture temporal dependencies effectively.",
+          "evaluationCriteria": [
+            "accuracy",
+            "precision",
+            "recall",
+            "F1-score",
+            "ROC-AUC"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-librispeech",
+            "name": "LibriSpeech ASR Corpus (Clean 100h)",
+            "source": "huggingface",
+            "description": "Large-scale read-speech corpus derived from LibriVox audiobooks. The standard benchmark for automatic speech recognition systems including Whisper, wav2vec 2.0, and HuBERT. Clean subset has 100 hours of carefully prepared speech.",
+            "domain": "Audio/Speech",
+            "size": "100 hours (clean split)",
+            "target": "text",
+            "target_type": "sequence_generation",
+            "load_code": "dataset = load_dataset('librispeech_asr', 'clean', split='train.100[:200]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: LibriSpeech ASR Corpus (Clean 100h) (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('librispeech_asr', 'clean', split='train.100[:200]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('librispeech_asr', 'clean', split='train.100[:200]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 30.64,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 30.64,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Medical Diagnosis",
+    "concept": "reinforcement learning",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Develop a robust machine learning system to assist healthcare professionals in accurately diagnosing whether a given chest X-ray image shows normal lungs, bacterial pneumonia, or viral pneumonia. This system will leverage pre-trained deep learning models to provide reliable predictions, aiding in timely treatment decisions for pediatric patients.",
+          "tasks": [
+            "Task 1: Data Loading and Inspection \u2014 load the dataset. Display sample images from each class (at least 5 per class). Report the total number of images, image dimensions (256x256 pixels), colour channels (grayscale), and class distribution. Check for any corrupted or unusually sized images.",
+            "Task 2: Image Preprocessing and Augmentation \u2014 resize all images to 256x256 pixels and normalise pixel values between 0 and 1. Apply data augmentation (random flip, rotation, zoom) to the training set only. Split 80/20 with stratification. Report class balance after split.",
+            "Task 3: Visual EDA \u2014 display a grid of sample images from each class. Plot the class distribution as a bar chart. For tabular metadata (if available), plot distributions of key attributes such as age and gender. Visualise mean and variance images per class.",
+            "Task 4: Model Training \u2014 fine-tune a pretrained model (e.g., ResNet-50 or EfficientNet-B0) using transfer learning. Freeze the base layers and train only the classification head first, then unfreeze and fine-tune end-to-end. Evaluate with a full metric suite including accuracy, precision, recall, F1-score, and AUC-ROC. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain, such as lung opacity patterns associated with bacterial versus viral infections.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original grayscale images and returns a prediction with confidence score. Discuss what monitoring would be needed in production, including regular performance checks and updates based on new data."
+          ],
+          "preprocessing_requirements": [
+            "Resize all images to 256x256 pixels",
+            "Normalise pixel values between 0 and 1",
+            "Apply data augmentation (random flip, rotation, zoom) to the training set only",
+            "Ensure class balance through stratified splitting"
+          ],
+          "expectedApproach": "Use fine-tuned ResNet-50 or EfficientNet-B0 due to their high performance on image classification tasks and suitability for transfer learning. These models can adapt well to the specific characteristics of chest X-rays while leveraging pre-trained weights from ImageNet.",
+          "evaluationCriteria": [
+            "accuracy",
+            "precision",
+            "recall",
+            "F1-score",
+            "AUC-ROC"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-chest-xray",
+            "name": "Chest X-Ray Pneumonia Detection",
+            "source": "huggingface",
+            "description": "Chest X-ray images categorized as normal or pneumonia (bacterial or viral). Collected from pediatric patients. Widely used for medical image classification and transfer learning from ImageNet pretrained models.",
+            "domain": "Healthcare",
+            "size": "5856 images",
+            "target": "diagnosis",
+            "target_type": "multiclass",
+            "load_code": "dataset = load_dataset('keremberke/chest-xray-classification', 'full')\nprint(dataset)\nprint(dataset['train'].features)",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Chest X-Ray Pneumonia Detection (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('keremberke/chest-xray-classification', 'full')\nprint(dataset)\nprint(dataset['train'].features)\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('keremberke/chest-xray-classification', 'full')\nprint(dataset)\nprint(dataset['train'].features)",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 31.589,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 31.589,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Time Series Forecasting",
+    "concept": "clustering",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Forecast the daily temperature in degrees Celsius for the next 7 days based on historical records of atmospheric conditions including temperature, pressure, humidity, and wind speed recorded every 10 minutes at the Max Planck Institute in Jena, Germany (2009\u20132016). This will aid local energy providers in optimizing power generation and distribution plans during extreme weather events.",
+          "tasks": [
+            "Task 1: Data Loading and Time Series Inspection \u2014 load the dataset. Plot the full time series for each key variable such as Temperature (T), Pressure, Humidity, Wind Speed, etc. Report the time range, sampling frequency, and any obvious gaps or anomalies. Check for stationarity using the ADF test.",
+            "Task 2: Time Series Preprocessing \u2014 handle missing timestamps and interpolate gaps. Apply differencing or log-transform if the series is non-stationary. Create lag features like Lag(T, 1), Lag(Humidity, 1), etc., and rolling window statistics such as rolling mean and standard deviation over 24 hours as additional features. Use a time-ordered train/test split (no random shuffle).",
+            "Task 3: Time Series EDA \u2014 decompose the series into trend, seasonality, and residual. Plot autocorrelation (ACF) and partial autocorrelation (PACF). Visualize seasonal patterns using box plots grouped by month/hour/day. Plot rolling mean and standard deviation to confirm stationarity.",
+            "Task 4: Model Training \u2014 train an ARIMA/SARIMA model as a statistical baseline. Also train an LSTM or Transformer-based forecasting model. Compare using rolling-origin cross-validation. Evaluate with a full metric suite including MAE, RMSE, and R^2. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain, such as how changes in wind direction and speed affect temperature forecasts.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production, considering the need to update models regularly due to climate change impacts."
+          ],
+          "preprocessing_requirements": [
+            "Handling missing timestamps and interpolating gaps for Temperature, Pressure, Humidity, Wind Speed, etc.",
+            "Creating lag features like Lag(Temperature, 1), Lag(Pressure, 1), etc., and rolling window statistics for all relevant features.",
+            "Checking for stationarity and applying transformations if necessary."
+          ],
+          "expectedApproach": "For this dataset, consider using SARIMA for its ability to capture seasonality and trends effectively, along with LSTM for capturing complex temporal dependencies. These methods are suitable for regression problems where predicting continuous values like temperature is required.",
+          "evaluationCriteria": [
+            "MAE",
+            "RMSE",
+            "R^2"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-weather-jena",
+            "name": "Jena Climate Time Series",
+            "source": "huggingface",
+            "description": "14 atmospheric variables (temperature, pressure, humidity, wind speed/direction, etc.) recorded every 10 minutes at the Max Planck Institute in Jena, Germany (2009\u20132016). Featured in Keras documentation for LSTM/GRU weather forecasting tutorials.",
+            "domain": "Environmental",
+            "size": "~420,000 rows",
+            "target": "T (degC)",
+            "target_type": "regression",
+            "load_code": "dataset = load_dataset('kaanari/jena-climate-2009-2016', split='train')\ndf = pd.DataFrame(dataset)\nprint(df.head())\nprint(df.shape)",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Jena Climate Time Series (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('kaanari/jena-climate-2009-2016', split='train')\ndf = pd.DataFrame(dataset)\nprint(df.head())\nprint(df.shape)\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('kaanari/jena-climate-2009-2016', split='train')\ndf = pd.DataFrame(dataset)\nprint(df.head())\nprint(df.shape)",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 32.678,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 32.678,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Anomaly Detection",
+    "concept": "anomaly detection",
+    "difficulty": "easy",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "In the context of cybersecurity, we have a synthetic dataset that simulates network traffic patterns during both normal operation and when anomalies occur due to potential cyber threats. The goal is to detect such anomalies early to prevent security breaches. This dataset contains two numerical features representing various aspects of network activity, and a target variable indicating whether the observation is normal ('normal') or an anomaly ('anomaly').",
+          "tasks": [
+            "Task 1: Data Loading and Exploration \u2014 load the 'Synthetic Clustering Dataset' for 'Anomaly Detection'. Display shape, dtypes, first 10 rows, and per-column missing value counts. Report descriptive statistics and identify any data quality issues specific to this domain.",
+            "Task 2: Data Preprocessing \u2014 handle missing values (impute or drop as appropriate) for the two numerical features. Encode the 'cluster_label' using LabelEncoder or OneHotEncoder if necessary. Scale the numerical features using StandardScaler or MinMaxScaler. Use stratified split for classification.",
+            "Task 3: Anomaly EDA \u2014 plot the class imbalance ratio for 'normal' versus 'anomaly'. Visualize the distribution of the two numerical features split by normal vs anomalous samples. Plot a correlation heatmap and identify which features are most correlated with the anomaly label.",
+            "Task 4: Model Training \u2014 train a single baseline model using Logistic Regression as it can handle binary classification effectively. Report accuracy on the test set. Evaluate using a confusion matrix and primary metrics including Accuracy, Precision, Recall, and F1-score.",
+            "Task 5: Model Comparison and Domain Insights \u2014 identify the top 3 most important features using the model's built-in feature importance or coefficients."
+          ],
+          "preprocessing_requirements": [
+            "Impute or drop missing values for the two numerical features from this dataset",
+            "Encode the 'cluster_label' using LabelEncoder or OneHotEncoder as appropriate",
+            "Scale the numerical features using StandardScaler or MinMaxScaler for better model performance"
+          ],
+          "expectedApproach": "Use Logistic Regression and Random Forest classifiers as they are well-suited for binary classification tasks in anomaly detection. Logistic Regression provides interpretable coefficients and probabilities, while Random Forest can capture complex relationships between features and labels.",
+          "evaluationCriteria": [
+            "accuracy",
+            "precision",
+            "recall",
+            "f1_score"
+          ],
+          "difficulty": "easy",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "sklearn-make-blobs",
+            "name": "Synthetic Clustering Dataset",
+            "source": "sklearn",
+            "description": "A synthetically generated clustering dataset with configurable cluster centers, standard deviation, and number of features. Ideal for visualizing and testing clustering algorithms like K-Means, DBSCAN, and Gaussian Mixture Models.",
+            "domain": "General",
+            "size": "500 rows x 3 columns (configurable)",
+            "target": "cluster_label",
+            "target_type": "multiclass",
+            "load_code": "X, y = make_blobs(n_samples=500, n_features=2, centers=4, cluster_std=1.0, random_state=42)\ndf = pd.DataFrame(X, columns=['feature_1', 'feature_2'])\ndf['cluster'] = y\nprint(df.shape)\nprint(df.head())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Synthetic Clustering Dataset (sklearn)\n# Run this cell to load your data\n\nX, y = make_blobs(n_samples=500, n_features=2, centers=4, cluster_std=1.0, random_state=42)\ndf = pd.DataFrame(X, columns=['feature_1', 'feature_2'])\ndf['cluster'] = y\nprint(df.shape)\nprint(df.head())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "X, y = make_blobs(n_samples=500, n_features=2, centers=4, cluster_std=1.0, random_state=42)\ndf = pd.DataFrame(X, columns=['feature_1', 'feature_2'])\ndf['cluster'] = y\nprint(df.shape)\nprint(df.head())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 22.787,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 22.787,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Object Detection",
+    "concept": "nlp",
+    "difficulty": "easy",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "The task involves developing a machine learning model to classify SMS messages into two categories: spam and ham. This is crucial for filtering out unwanted messages in mobile communication systems, improving user experience and reducing network congestion.",
+          "tasks": [
+            "Task 1: Data Loading and Inspection \u2014 load the dataset. Display sample messages from each class (at least 5 per class). Report the total number of messages, message length, and class distribution. Check for any corrupted or unusually formatted messages.",
+            "Task 2: Text Preprocessing \u2014 clean the text data by removing special characters, numbers, and converting all letters to lowercase. Tokenize the text into words and remove stop words. Split 80/20 train/test with stratification.",
+            "Task 3: Feature Engineering \u2014 create bag-of-words (BoW) representation of the messages. Perform TF-IDF transformation on the BoW. Visualise the term frequency distribution across classes.",
+            "Task 4: Model Training \u2014 train a simple Naive Bayes classifier from scratch. Evaluate using a confusion matrix and one primary metric (Accuracy or F1-score).",
+            "Task 5: Model Comparison and Domain Insights \u2014 Identify the top 3 most important features using the model's built-in feature importance or coefficients."
+          ],
+          "preprocessing_requirements": [
+            "Lowercase the sms text for uniformity",
+            "Remove non-alphabetic characters and convert to lowercase",
+            "Tokenize the sms text and remove common stop words",
+            "Check for and handle class imbalance if present"
+          ],
+          "expectedApproach": "Naive Bayes, Logistic Regression, and SVM can be used due to their simplicity and suitability for text classification problems with imbalanced datasets.",
+          "evaluationCriteria": [
+            "accuracy",
+            "f1_score",
+            "confusion_matrix"
+          ],
+          "difficulty": "easy",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-spam-detection",
+            "name": "SMS Spam Collection Dataset",
+            "source": "huggingface",
+            "description": "SMS Spam Collection with 5574 tagged SMS messages \u2014 4827 legitimate (ham) and 747 spam. The most widely used benchmark for text spam classification. Messages range from casual conversations to promotional spam. Demonstrates class imbalance in NLP, Naive Bayes as a natural fit, and the effectiveness of simple word-count features.",
+            "domain": "NLP",
+            "size": "5574 SMS messages",
+            "target": "label",
+            "target_type": "binary",
+            "load_code": "dataset = load_dataset('uciml/sms_spam', split='train')\nprint(dataset)\nprint(dataset[0])",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: SMS Spam Collection Dataset (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('uciml/sms_spam', split='train')\nprint(dataset)\nprint(dataset[0])\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('uciml/sms_spam', split='train')\nprint(dataset)\nprint(dataset[0])",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 20.468,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 20.468,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Recommendation System",
+    "concept": "classification",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Develop a recommendation system for online banking customer service queries to improve customer satisfaction and reduce response times. Given historical customer queries labeled with specific intents, the goal is to accurately classify new incoming queries into one of 77 predefined intent categories, enabling efficient routing to the appropriate department within the bank\u2019s customer service team.",
+          "tasks": [
+            "Task 1: Data Loading and Text Inspection \u2014 load the dataset. Display 5 sample texts per class/label. Report vocabulary size, average token length, class distribution, and language distribution if multilingual. Identify any HTML artefacts, special characters, or encoding issues.",
+            "Task 2: Text Preprocessing \u2014 clean text (lowercase, remove punctuation/HTML/stopwords). Tokenise using an appropriate tokeniser (word-level or subword). Apply TF-IDF vectorisation or tokenise for a transformer model. Split 80/20 train/test with stratification on the label.",
+            "Task 3: Text EDA \u2014 plot word frequency distributions per class using bar charts or word clouds. Visualise text length distributions. Plot the class label distribution. Identify the most discriminative words using TF-IDF scores.",
+            "Task 4: Model Training \u2014 fine-tune a pretrained transformer (e.g. bert-base-uncased or distilbert-base-uncased) for this task. Also train a TF-IDF + Logistic Regression baseline for comparison. Evaluate with full metric suite. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
+          ],
+          "preprocessing_requirements": [
+            "Lowercase all customer banking queries",
+            "Remove punctuation and HTML artefacts from customer banking queries",
+            "Tokenize queries using WordPiece tokenization",
+            "Ensure balanced class distribution during splitting"
+          ],
+          "expectedApproach": "Fine-tuning BERT or DistilBERT models due to their strong performance on sequence classification tasks and the need for accurate intent categorization. Additionally, training a TF-IDF + Logistic Regression model can serve as a robust baseline for comparison, especially useful in understanding the contribution of term frequencies and document-term relationships.",
+          "evaluationCriteria": [
+            "accuracy",
+            "f1_macro",
+            "confusion_matrix"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-banking77",
+            "name": "Banking77 Intent Classification",
+            "source": "huggingface",
+            "description": "Online banking customer service queries classified into 77 fine-grained intent categories. Used for intent detection, customer support automation, and few-shot NLP experiments.",
+            "domain": "Finance",
+            "size": "10003 train + 3080 test queries",
+            "target": "intent",
+            "target_type": "multiclass",
+            "load_code": "dataset = load_dataset('banking77')\ndf = pd.DataFrame(dataset['train'])\nprint(df.shape)\nprint(df['label'].value_counts().head(10))",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Banking77 Intent Classification (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('banking77')\ndf = pd.DataFrame(dataset['train'])\nprint(df.shape)\nprint(df['label'].value_counts().head(10))\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('banking77')\ndf = pd.DataFrame(dataset['train'])\nprint(df.shape)\nprint(df['label'].value_counts().head(10))",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 27.903,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 27.903,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Anomaly Detection",
+    "concept": "reinforcement learning",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Develop an anomaly detection system to identify fraudulent credit card transactions from a dataset of European cardholder transactions made in September 2013. The dataset contains 284,807 transactions with 28 PCA-transformed features (V1-V28), time since the first transaction, and the transaction amount. Only 0.172% of transactions are fraudulent, making it essential to address class imbalance effectively.",
+          "tasks": [
+            "Task 1: Data Loading and Exploration \u2014 load the dataset for 'Credit Card Fraud Detection'. Display shape, dtypes, first 10 rows, and per-column missing value counts. Report descriptive statistics and identify any data quality issues specific to this domain.",
+            "Task 2: Data Preprocessing \u2014 handle missing values (impute or drop as appropriate). Encode categorical features using LabelEncoder or OneHotEncoder as appropriate. Scale numerical features using StandardScaler or MinMaxScaler. Use stratified split for classification. Address class imbalance using SMOTE or class_weight='balanced'.",
+            "Task 3: Anomaly EDA \u2014 plot the class imbalance ratio. Visualise the distribution of key numeric features split by normal vs anomalous samples. Plot a correlation heatmap and identify features most correlated with the anomaly label.",
+            "Task 4: Model Training \u2014 Build a full ML pipeline using sklearn Pipeline or equivalent. Train at least 3 models including one ensemble (e.g., XGBoost or LightGBM) and one interpretable baseline. Perform hyperparameter tuning using GridSearchCV or Optuna. Use class_weight='balanced' or SMOTE to handle class imbalance. Evaluate with full metric suite. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
+          ],
+          "preprocessing_requirements": [
+            "Imputing missing values for V1-V28 if present",
+            "Encoding categorical features such as Time and Amount if they exist",
+            "Scaling numerical features like V1-V28, Time, and Amount using StandardScaler or MinMaxScaler",
+            "Handling class imbalance using SMOTE or setting class_weight='balanced'"
+          ],
+          "expectedApproach": "For this dataset, consider using Random Forest Classifier, XGBoost, and Isolation Forest. Random Forest can capture non-linear relationships and handle high-dimensional data well. XGBoost provides strong performance and interpretability through feature importance scores. Isolation Forest is effective for anomaly detection and can help in identifying outliers.",
+          "evaluationCriteria": [
+            "precision",
+            "recall",
+            "F1-score",
+            "ROC AUC",
+            "learning curve analysis"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "openml-fraud-detection",
+            "name": "Credit Card Fraud Detection",
+            "source": "openml",
+            "description": "Credit card fraud detection dataset with 284807 transactions from European cardholders in September 2013. Features V1-V28 are PCA components of anonymised transaction data. Only 492 transactions (0.172%) are fraudulent \u2014 the most extreme class imbalance benchmark in ML. Essential for learning SMOTE, precision-recall tradeoffs, and cost-sensitive learning in financial security.",
+            "domain": "Finance",
+            "size": "284807 rows x 31 features",
+            "target": "Class",
+            "target_type": "binary",
+            "load_code": "data = fetch_openml(data_id=1597, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['Class'].value_counts())\nprint(f'Fraud rate: {df[\"Class\"].mean():.4%}')",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Credit Card Fraud Detection (openml)\n# Run this cell to load your data\n\ndata = fetch_openml(data_id=1597, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['Class'].value_counts())\nprint(f'Fraud rate: {df[\"Class\"].mean():.4%}')\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "data = fetch_openml(data_id=1597, as_frame=True, parser='auto')\ndf = data.frame\nprint(df.shape)\nprint(df.head())\nprint(df['Class'].value_counts())\nprint(f'Fraud rate: {df[\"Class\"].mean():.4%}')",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 31.021,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 31.021,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Image Captioning",
+    "concept": "classification",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "The goal of this task is to develop an automated system capable of generating high-quality captions for images from the Microsoft COCO dataset. This system will aid in content creation for media platforms, assist visually impaired users, and enhance the accessibility of digital images. Given the diverse range of images and captions, the challenge lies in accurately capturing the nuances and details of the scenes depicted in the images.",
+          "tasks": [
+            "Task 1: Data Loading and Inspection \u2014 load the dataset. Display sample images from each class (at least 5 per class). Report the total number of images, image dimensions, color channels, and class distribution. Check for any corrupted or unusually sized images.",
+            "Task 2: Image Preprocessing and Augmentation \u2014 resize all images to a consistent dimension (e.g., 224x224) and normalize pixel values. Apply data augmentation techniques such as random flips, rotations, and zooms to the training set only. Split the dataset into 80% training and 20% testing sets with stratification based on the number of captions per image. Report the class balance after splitting.",
+            "Task 3: Visual EDA \u2014 display a grid of sample images from each class. Plot the class distribution as a bar chart. For tabular metadata (if available), plot distributions of key attributes such as image size, number of captions, etc. Visualize mean and variance images per class to understand the variability within classes.",
+            "Task 4: Model Training \u2014 fine-tune a pretrained model (e.g., ResNet-50 or EfficientNet-B0) using transfer learning. Freeze the base layers and train only the caption generation head first, then unfreeze and fine-tune end-to-end. Evaluate with a full metric suite including BLEU scores, METEOR, and CIDEr. Plot learning curves to diagnose bias and variance issues. Use k-fold cross-validation (k=5) instead of a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use SHAP values to explain individual predictions. Identify the top drivers and explain their real-world meaning in the context of the problem domain, such as the importance of certain objects or scenes in generating accurate captions.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the form of images and returns a caption along with a confidence score. Discuss what monitoring would be needed in production to ensure the model remains accurate over time."
+          ],
+          "preprocessing_requirements": [
+            "Load the dataset containing images and corresponding captions",
+            "Resize images to 224x224 pixels",
+            "Normalize pixel values between 0 and 1",
+            "Apply data augmentation techniques like random flips, rotations, and zooms to the training set only"
+          ],
+          "expectedApproach": [
+            "Use a pretrained CNN model like ResNet-50 as the backbone for feature extraction followed by a recurrent neural network (RNN) or transformer-based architecture for generating captions. This approach leverages existing knowledge from large-scale pretraining while allowing fine-tuning to adapt to the specific characteristics of the COCO dataset.",
+            "Fine-tune the model using a combination of supervised learning and reinforcement learning to improve the quality and diversity of generated captions."
+          ],
+          "evaluationCriteria": [
+            "BLEU score",
+            "METEOR score",
+            "CIDEr score"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-coco-captions",
+            "name": "MS COCO Image Captioning",
+            "source": "huggingface",
+            "description": "Microsoft COCO dataset with 330,000 images and 5 captions per image. Widely used for image captioning, visual question answering, and multimodal learning experiments.",
+            "domain": "Computer Vision",
+            "size": "330000+ images with 5 captions each",
+            "target": "caption",
+            "target_type": "sequence_generation",
+            "load_code": "dataset = load_dataset('HuggingFaceM4/COCO', split='train[:100]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: MS COCO Image Captioning (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('HuggingFaceM4/COCO', split='train[:100]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('HuggingFaceM4/COCO', split='train[:100]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 35.311,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 35.311,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Image Captioning",
+    "concept": "clustering",
+    "difficulty": "hard",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "Develop an advanced image captioning system capable of generating high-quality captions for diverse images using the Microsoft COCO dataset. This task involves leveraging deep learning models to understand visual content and produce descriptive text based on multiple human annotations per image.",
+          "tasks": [
+            "Task 1: Data Loading and Inspection \u2014 load the dataset. Display sample images from each class (at least 5 per class). Report the total number of images, image dimensions, color channels, and class distribution. Check for any corrupted or unusually sized images.",
+            "Task 2: Image Preprocessing and Augmentation \u2014 resize all images and normalize pixel values. Apply data augmentation (random flip, rotation, zoom) to the training set only. Split 80/20 with stratification. Report class balance after split.",
+            "Task 3: Visual EDA \u2014 display a grid of sample images from each class. Plot the class distribution as a bar chart. For tabular metadata (if available), plot distributions of key attributes. Visualize mean and variance images per class.",
+            "Task 4: Model Training \u2014 fine-tune a pretrained model (e.g., ResNet-50 or EfficientNet-B0) using transfer learning. Freeze the base layers and train only the caption generation head first, then unfreeze and fine-tune end-to-end. Evaluate with perplexity, BLEU scores, and ROUGE scores. Plot learning curves to diagnose bias/variance. Use cross-validation (k=5) rather than a single train/test split.",
+            "Task 5: Model Comparison and Domain Insights \u2014 use attention mechanisms to analyze which parts of the image contribute most to the generated captions. Identify the top drivers and explain their real-world meaning in the context of the problem domain.",
+            "Task 6: Model Deployment Readiness \u2014 export the best model using joblib or pickle. Write a predict() function that accepts raw input in the same format as the original features and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
+          ],
+          "preprocessing_requirements": [
+            "Resize images to a consistent dimension (e.g., 224x224)",
+            "Normalize pixel values between 0 and 1",
+            "Apply random flips, rotations, and zooms to the training set only"
+          ],
+          "expectedApproach": [
+            "Using a transformer-based architecture like BERT or T5 for sequence generation due to its effectiveness in handling sequential data and understanding context within sentences.",
+            "Fine-tuning a pre-trained CNN (like ResNet-50) followed by a decoder network for generating captions."
+          ],
+          "evaluationCriteria": [
+            "perplexity",
+            "BLEU score",
+            "ROUGE score"
+          ],
+          "difficulty": "hard",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "hf-coco-captions",
+            "name": "MS COCO Image Captioning",
+            "source": "huggingface",
+            "description": "Microsoft COCO dataset with 330,000 images and 5 captions per image. Widely used for image captioning, visual question answering, and multimodal learning experiments.",
+            "domain": "Computer Vision",
+            "size": "330000+ images with 5 captions each",
+            "target": "caption",
+            "target_type": "sequence_generation",
+            "load_code": "dataset = load_dataset('HuggingFaceM4/COCO', split='train[:100]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: MS COCO Image Captioning (huggingface)\n# Run this cell to load your data\n\ndataset = load_dataset('HuggingFaceM4/COCO', split='train[:100]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "dataset = load_dataset('HuggingFaceM4/COCO', split='train[:100]', trust_remote_code=True)\nprint(dataset)\nprint(dataset[0].keys())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 30.532,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 30.532,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  },
+  {
+    "topic": "Fraud Detection",
+    "concept": "reinforcement learning",
+    "difficulty": "easy",
+    "response": {
+      "aiml_problems": [
+        {
+          "problemStatement": "In the finance industry, detecting fraudulent transactions is critical to maintaining the integrity of financial systems. This synthetic dataset simulates customer transaction behaviors that can indicate fraudulent activities. The goal is to build a machine learning model to accurately classify transactions as either legitimate ('normal') or fraudulent ('anomalous'). Given the nature of the dataset, the task involves handling imbalanced classes and understanding the underlying patterns that distinguish fraudulent from non-fraudulent transactions.",
+          "tasks": [
+            "Task 1: Data Loading and Exploration \u2014 load the dataset for 'Fraud Detection'. Display shape, dtypes, first 10 rows, and per-column missing value counts. Report descriptive statistics and identify any data quality issues specific to this domain such as outliers or skewed distributions in the transaction amounts.",
+            "Task 2: Data Preprocessing \u2014 handle missing values (impute or drop as appropriate) using Imputer or DataFrame.dropna(). Encode categorical features using LabelEncoder or OneHotEncoder as appropriate based on identified features like TransactionType. Scale numerical features using StandardScaler or MinMaxScaler for features like Amount, TimeSinceLastTransaction, etc. Use stratified split for classification ensuring equal representation of both classes. Address class imbalance using SMOTE or class_weight='balanced' to ensure the model does not overfit to the majority class.",
+            "Task 3: Anomaly EDA \u2014 plot the class imbalance ratio using plt.hist() for the target variable. Visualise the distribution of key numeric features such as Amount, TimeSinceLastTransaction, and NumTransactionsSplitByDay using histograms or boxplots split by normal vs anomalous samples. Plot a correlation heatmap using seaborn.heatmap() and identify features most correlated with the anomaly label such as Amount and TimeSinceLastTransaction.",
+            "Task 4: Model Training \u2014 Train a single baseline model such as Logistic Regression or Decision Tree. Report accuracy on test set. Use class_weight='balanced' or SMOTE to handle class imbalance. Evaluate using a confusion matrix and one primary metric (Accuracy or F1 Score).",
+            "Task 5: Model Comparison and Domain Insights \u2014 Identify the top 3 most important features using the model's built-in feature importance or coefficients such as coef_ attribute of LogisticRegression or feature_importances_ of RandomForestClassifier."
+          ],
+          "preprocessing_requirements": [
+            "Imputation or dropping of missing values in features like TimeSinceLastTransaction and NumTransactionsSplitByDay",
+            "Encoding of categorical features like TransactionType using LabelEncoder or OneHotEncoder",
+            "Scaling of numerical features including Amount, TimeSinceLastTransaction, and NumTransactionsSplitByDay using StandardScaler or MinMaxScaler"
+          ],
+          "expectedApproach": "Logistic Regression and Random Forest Classifier. Logistic Regression is chosen due to its interpretability and suitability for binary classification problems, while Random Forest provides robustness against overfitting and handles feature interactions well.",
+          "evaluationCriteria": [
+            "accuracy",
+            "precision",
+            "recall",
+            "f1_score",
+            "roc_auc_score"
+          ],
+          "difficulty": "easy",
+          "bloomLevel": "Apply",
+          "dataset": {
+            "catalog_id": "sklearn-make-classification",
+            "name": "Synthetic Binary Classification Dataset",
+            "source": "sklearn",
+            "description": "A synthetically generated binary classification dataset with configurable informative features, redundant features, and noise. Useful for testing classifiers under controlled conditions. Features represent customer behavior, fraud signals, or churn indicators depending on domain context.",
+            "domain": "Finance",
+            "size": "1000 rows x 21 columns (configurable)",
+            "target": "label",
+            "target_type": "binary",
+            "load_code": "X, y = make_classification(n_samples=1000, n_features=20, n_informative=10, n_redundant=5, random_state=42)\ncols = [f'feature_{i}' for i in range(X.shape[1])]\ndf = pd.DataFrame(X, columns=cols)\ndf['target'] = y\nprint(df.shape)\nprint(df.head())",
+            "direct_load": true,
+            "storage_type": "library",
+            "file_id": null
+          },
+          "starter_code": {
+            "python3": "# Dataset: Synthetic Binary Classification Dataset (sklearn)\n# Run this cell to load your data\n\nX, y = make_classification(n_samples=1000, n_features=20, n_informative=10, n_redundant=5, random_state=42)\ncols = [f'feature_{i}' for i in range(X.shape[1])]\ndf = pd.DataFrame(X, columns=cols)\ndf['target'] = y\nprint(df.shape)\nprint(df.head())\n\n# Your solution below\n"
+          },
+          "dataset_load_code": "X, y = make_classification(n_samples=1000, n_features=20, n_informative=10, n_redundant=5, random_state=42)\ncols = [f'feature_{i}' for i in range(X.shape[1])]\ndf = pd.DataFrame(X, columns=cols)\ndf['target'] = y\nprint(df.shape)\nprint(df.head())",
+          "dataset_strategy": "library",
+          "generation_time_seconds": 33.768,
+          "cache_hit": false
+        }
+      ],
+      "generation_time_seconds": 33.768,
+      "cache_hit": false,
+      "batched": false,
+      "batch_size": 1
+    }
+  }
+]

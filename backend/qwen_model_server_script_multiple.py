@@ -2703,379 +2703,142 @@ JSON FORMAT:
 Generate now:"""
 
 
-def _build_task_scaffold(topic: str, difficulty: str, target_type: str = "",
-                         category: str = "", domain: str = "",
-                         features_info: str = "", dataset_name: str = "") -> str:
-    """
-    Derives a dynamic, context-aware task instruction block from topic/difficulty/
-    target_type/category/domain at prompt-build time (pure Python — no LLM).
-
-    This replaces hardcoded task template strings so the LLM generates tasks that
-    are genuinely shaped by what the problem actually is.
-
-    Rules:
-      - target_type drives the modelling and evaluation tasks
-      - category (cv / nlp / audio / graph / time-series / tabular) drives
-        what EDA and preprocessing tasks look like
-      - difficulty drives depth: Easy = basic, Medium = tuning/comparison,
-        Hard = pipelines/advanced techniques
-      - domain adds domain-specific insight angle
-    """
-    topic_l     = topic.lower()
-    difficulty_l = difficulty.lower()
-    target_l    = target_type.lower()
-    category_l  = category.lower()
-    domain_l    = domain.lower()
-
-    # ── 1. Decide problem family ──────────────────────────────────────────────
-    is_regression   = "continuous" in target_l or "regression" in target_l
-    is_binary       = "binary" in target_l
-    is_multiclass   = "multiclass" in target_l or "multi-class" in target_l
-    is_multilabel   = "multilabel" in target_l or "multi-label" in target_l
-    is_clustering   = "cluster" in topic_l or "segment" in topic_l
-    is_cv           = category_l == "cv"     or any(k in topic_l for k in ["image","vision","pixel","cnn","object detect","face"])
-    is_nlp          = category_l == "nlp"    or any(k in topic_l for k in ["text","sentiment","nlp","language","nlp","document","news","tweet","review","bert","llm"])
-    is_audio        = category_l == "audio"  or any(k in topic_l for k in ["audio","speech","sound","voice","music"])
-    is_timeseries   = category_l == "time-series" or any(k in topic_l for k in ["time series","forecasting","temporal","arima","lstm","stock","electricity","weather"])
-    is_graph        = category_l == "graph"  or any(k in topic_l for k in ["graph","network","node","edge","gnn"])
-    is_generative   = any(k in topic_l for k in ["generat","gan","diffusion","vae","autoencoder","synthetic data"])
-    is_anomaly      = any(k in topic_l for k in ["anomaly","fraud","outlier","intrusion","defect"])
-    is_tabular      = not (is_cv or is_nlp or is_audio or is_timeseries or is_graph)
-
-    # ── 2. Difficulty modifiers ───────────────────────────────────────────────
-    if difficulty_l == "easy":
-        model_depth   = "Train a single baseline model (e.g. Logistic Regression or Decision Tree). Report accuracy on test set."
-        eval_depth    = "Evaluate using a confusion matrix and one primary metric (Accuracy or RMSE)."
-        insight_depth = "Identify the top 3 most important features using the model's built-in feature importance or coefficients."
-        extra_task    = ""
-    elif difficulty_l == "hard":
-        model_depth   = (
-            "Build a full ML pipeline using sklearn Pipeline or equivalent. Train at least 3 models including "
-            "one ensemble (e.g. XGBoost or LightGBM) and one interpretable baseline. Perform hyperparameter "
-            "tuning using GridSearchCV or Optuna."
-        )
-        eval_depth    = (
-            "Evaluate with full metric suite. Plot learning curves to diagnose bias/variance. "
-            "Use cross-validation (k=5) rather than a single train/test split."
-        )
-        insight_depth = (
-            "Use SHAP values to explain individual predictions. Identify the top drivers and explain "
-            "their real-world meaning in the context of the problem domain."
-        )
-        extra_task    = (
-            "Task 6: Model Deployment Readiness — export the best model using joblib or pickle. "
-            "Write a predict() function that accepts raw input in the same format as the original features "
-            "and returns a prediction with confidence score. Discuss what monitoring would be needed in production."
-        )
-    else:  # Medium
-        model_depth   = (
-            "Train at least 2 models of different families (e.g. one linear, one tree-based). "
-            "Compare performance and justify which is more appropriate for this problem."
-        )
-        eval_depth    = (
-            "Evaluate using metrics appropriate for this target type. "
-            "Plot a confusion matrix (classification) or residual plot (regression)."
-        )
-        insight_depth = (
-            "Use feature importance or permutation importance to identify the top 5 most predictive features. "
-            "Explain what each implies in the real-world context of the problem."
-        )
-        extra_task    = ""
-
-    # ── 3. Task 1: Data loading — shaped by category ─────────────────────────
-    if is_cv:
-        task1 = (
-            f"Task 1: Data Loading and Inspection — load the dataset. Display sample images from each class "
-            f"(at least 5 per class). Report the total number of images, image dimensions, colour channels, "
-            f"and class distribution. Check for any corrupted or unusually sized images."
-        )
-    elif is_nlp:
-        task1 = (
-            f"Task 1: Data Loading and Text Inspection — load the dataset. Display 5 sample texts per class/label. "
-            f"Report vocabulary size, average token length, class distribution, and language distribution if multilingual. "
-            f"Identify any HTML artefacts, special characters, or encoding issues."
-        )
-    elif is_audio:
-        task1 = (
-            f"Task 1: Data Loading and Audio Inspection — load the dataset. Display the waveform and spectrogram "
-            f"of one sample per class. Report sampling rate, clip duration distribution, and class balance. "
-            f"Check for silent clips or clipping artefacts."
-        )
-    elif is_timeseries:
-        task1 = (
-            f"Task 1: Data Loading and Time Series Inspection — load the dataset. Plot the full time series "
-            f"for each key variable. Report the time range, sampling frequency, and any obvious gaps or anomalies. "
-            f"Check for stationarity using the ADF test."
-        )
-    elif is_graph:
-        task1 = (
-            f"Task 1: Data Loading and Graph Inspection — load the graph dataset. Report the number of nodes, "
-            f"edges, and node features. Visualise a subgraph of 50 nodes. Check degree distribution and "
-            f"identify hub nodes."
-        )
-    else:
-        task1 = (
-            f"Task 1: Data Loading and Exploration — load the dataset for '{topic}'. "
-            f"Display shape, dtypes, first 10 rows, and per-column missing value counts. "
-            f"Report descriptive statistics and identify any data quality issues specific to this domain."
-        )
-
-    # ── 4. Task 2: Preprocessing — shaped by category + target ───────────────
-    if is_cv:
-        if difficulty_l == "easy":
-            task2 = (
-                "Task 2: Image Preprocessing — resize all images to a consistent size (e.g. 224×224). "
-                "Normalise pixel values to [0, 1]. Split 80/20 train/test with stratification."
-            )
-        else:
-            task2 = (
-                "Task 2: Image Preprocessing and Augmentation — resize all images and normalise pixel values. "
-                "Apply data augmentation (random flip, rotation, zoom) to the training set only. "
-                "Split 80/20 with stratification. Report class balance after split."
-            )
-    elif is_nlp:
-        task2 = (
-            "Task 2: Text Preprocessing — clean text (lowercase, remove punctuation/HTML/stopwords). "
-            "Tokenise using an appropriate tokeniser (word-level or subword). "
-            "Apply TF-IDF vectorisation or tokenise for a transformer model. "
-            "Split 80/20 train/test with stratification on the label."
-        )
-    elif is_audio:
-        task2 = (
-            "Task 2: Audio Feature Extraction — extract MFCC features (13–40 coefficients) from each clip. "
-            "Optionally extract mel-spectrograms for deep learning approaches. "
-            "Normalise features. Split 80/20 with stratification."
-        )
-    elif is_timeseries:
-        task2 = (
-            "Task 2: Time Series Preprocessing — handle missing timestamps and interpolate gaps. "
-            "Apply differencing or log-transform if the series is non-stationary. "
-            "Create lag features and rolling window statistics as additional features. "
-            "Use a time-ordered train/test split (no random shuffle)."
-        )
-    else:
-        split_note = "Use stratified split for classification." if (is_binary or is_multiclass) else "Use a standard 80/20 split."
-        imbalance_note = " Address class imbalance using SMOTE or class_weight='balanced'." if is_binary else ""
-        task2 = (
-            f"Task 2: Data Preprocessing — handle missing values (impute or drop as appropriate). "
-            f"Encode categorical features using LabelEncoder or OneHotEncoder as appropriate. "
-            f"Scale numerical features using StandardScaler or MinMaxScaler. "
-            f"{split_note}{imbalance_note}"
-        )
-
-    # ── 5. Task 3: EDA — shaped by category + domain ─────────────────────────
-    if is_cv:
-        task3 = (
-            "Task 3: Visual EDA — display a grid of sample images from each class. "
-            "Plot the class distribution as a bar chart. For tabular metadata (if available), "
-            "plot distributions of key attributes. Visualise mean and variance images per class."
-        )
-    elif is_nlp:
-        task3 = (
-            "Task 3: Text EDA — plot word frequency distributions per class using bar charts or word clouds. "
-            "Visualise text length distributions. Plot the class label distribution. "
-            "Identify the most discriminative words using TF-IDF scores."
-        )
-    elif is_audio:
-        task3 = (
-            "Task 3: Audio EDA — plot MFCC feature distributions per class. "
-            "Visualise mel-spectrograms side by side for different classes. "
-            "Plot clip duration and sampling rate distributions."
-        )
-    elif is_timeseries:
-        task3 = (
-            "Task 3: Time Series EDA — decompose the series into trend, seasonality, and residual. "
-            "Plot autocorrelation (ACF) and partial autocorrelation (PACF). "
-            "Visualise seasonal patterns using box plots grouped by month/hour/day. "
-            "Plot rolling mean and standard deviation to confirm stationarity."
-        )
-    elif is_clustering:
-        task3 = (
-            f"Task 3: EDA for Clustering — plot pairwise scatter plots of key features coloured by any available labels. "
-            f"Compute and visualise the correlation matrix. "
-            f"Use PCA or t-SNE to project features into 2D and look for natural groupings relevant to '{topic}'."
-        )
-    elif is_anomaly:
-        task3 = (
-            f"Task 3: Anomaly EDA — plot the class imbalance ratio. "
-            f"Visualise the distribution of key numeric features split by normal vs anomalous samples. "
-            f"Plot a correlation heatmap and identify features most correlated with the anomaly label."
-        )
-    else:
-        # Generic tabular — but domain-aware angle
-        domain_eda = ""
-        if "churn" in topic_l or "retention" in topic_l:
-            domain_eda = "Plot churn rate by contract type, tenure bucket, and payment method. Visualise monthly charges distribution by churn status."
-        elif "fraud" in topic_l:
-            domain_eda = "Plot transaction amount distributions for fraud vs legitimate. Visualise fraud rate by merchant category and hour of day."
-        elif "medical" in topic_l or "health" in topic_l or "disease" in topic_l:
-            domain_eda = "Plot distributions of key clinical features (e.g. age, BMI) split by outcome. Visualise correlation heatmap of lab values."
-        elif "price" in topic_l or "house" in topic_l or "real estate" in topic_l:
-            domain_eda = "Plot price distribution and log-price distribution. Visualise price vs key predictors (size, location, year built)."
-        elif "credit" in topic_l or "loan" in topic_l or "default" in topic_l:
-            domain_eda = "Plot default rate by loan grade, employment length, and home ownership. Visualise interest rate and loan amount distributions."
-        else:
-            domain_eda = (
-                f"Visualise the target distribution. Plot the top-10 feature correlations with the target. "
-                f"Create 2–3 domain-specific plots relevant to '{topic}'."
-            )
-        task3 = f"Task 3: Exploratory Data Analysis — {domain_eda}"
-
-    # ── 6. Task 4: Modelling — shaped by target_type + category + difficulty ──
-    if is_cv:
-        if difficulty_l == "easy":
-            task4 = (
-                "Task 4: Model Training — train a simple CNN (2–3 conv layers) from scratch. "
-                f"{eval_depth}"
-            )
-        elif difficulty_l == "hard":
-            task4 = (
-                "Task 4: Model Training — fine-tune a pretrained model (e.g. ResNet-50 or EfficientNet-B0) "
-                "using transfer learning. Freeze the base layers and train only the classification head first, "
-                f"then unfreeze and fine-tune end-to-end. {eval_depth}"
-            )
-        else:
-            task4 = (
-                "Task 4: Model Training — train a baseline CNN and a pretrained model (e.g. MobileNetV2) "
-                f"with transfer learning. {eval_depth}"
-            )
-    elif is_nlp:
-        if difficulty_l == "hard":
-            task4 = (
-                "Task 4: Model Training — fine-tune a pretrained transformer (e.g. bert-base-uncased or "
-                "distilbert-base-uncased) for this task. Also train a TF-IDF + Logistic Regression baseline "
-                f"for comparison. {eval_depth}"
-            )
-        else:
-            task4 = (
-                "Task 4: Model Training — train a TF-IDF + Logistic Regression baseline and a TF-IDF + "
-                f"Random Forest model. If time allows, fine-tune a lightweight transformer. {eval_depth}"
-            )
-    elif is_audio:
-        task4 = (
-            "Task 4: Model Training — train a Random Forest on MFCC features as a baseline. "
-            "Also train a simple MLP or 1D CNN on MFCC sequences. "
-            f"{eval_depth}"
-        )
-    elif is_timeseries:
-        if difficulty_l == "easy":
-            task4 = f"Task 4: Model Training — fit an ARIMA model. Report AIC/BIC and plot residuals. {eval_depth}"
-        elif difficulty_l == "hard":
-            task4 = (
-                "Task 4: Model Training — train an ARIMA/SARIMA model as a statistical baseline. "
-                "Also train an LSTM or Transformer-based forecasting model. "
-                f"Compare using rolling-origin cross-validation. {eval_depth}"
-            )
-        else:
-            task4 = (
-                "Task 4: Model Training — train an ARIMA baseline and a gradient-boosted model "
-                f"(LightGBM) using lag features. {eval_depth}"
-            )
-    elif is_clustering:
-        task4 = (
-            f"Task 4: Clustering — apply K-Means clustering. Use the Elbow method and Silhouette score "
-            f"to choose the optimal number of clusters. Also try DBSCAN as an alternative. "
-            f"Visualise clusters using PCA or t-SNE."
-        )
-    elif is_generative:
-        task4 = (
-            f"Task 4: Generative Model Training — implement the generative architecture appropriate for "
-            f"'{topic}'. Train on the dataset and generate samples. Evaluate using appropriate metrics "
-            f"(FID for images, BLEU/ROUGE for text, perceptual loss as applicable)."
-        )
-    elif is_regression:
-        task4 = (
-            f"Task 4: Model Training — {model_depth} "
-            f"For regression, evaluate using RMSE, MAE, and R². Plot predicted vs actual values."
-        )
-    else:  # classification
-        imb_note = " Use class_weight='balanced' or SMOTE to handle class imbalance." if is_binary else ""
-        task4 = (
-            f"Task 4: Model Training — {model_depth}{imb_note} "
-            f"{eval_depth}"
-        )
-
-    # ── 7. Task 5: Insights — always domain-specific ─────────────────────────
-    task5 = f"Task 5: Model Comparison and Domain Insights — {insight_depth}"
-
-    # ── 8. Assemble task list ─────────────────────────────────────────────────
-    tasks = [task1, task2, task3, task4, task5]
-    if extra_task:
-        tasks.append(extra_task)
-
-    # Return as a formatted string block for injection into the prompt
-    return "\n".join(f'    "{t}",' for t in tasks)
-
-
 def build_aiml_prompt(request_data):
     """
     Pass 1 prompt — model generates SCHEMA ONLY (no data rows).
     Data rows are generated programmatically in Pass 2 by generate_aiml_dataset().
 
-    Task scaffold is computed in Python (not by the LLM) so tasks are always
-    shaped by topic/difficulty/domain — never templated.
+    Improvements over previous version:
+      - Strict anti-generic-feature enforcement with auto-reject signal
+      - Concept list injected so tasks must address requested concepts
+      - Difficulty-aware complexity instruction (same dataset, different depth)
+      - Explicit target_type → evaluationCriteria pairing rules
+      - Forbidden placeholder list prevents template echo
     """
     topic      = request_data['topic']
     difficulty = request_data['difficulty']
-
-    # Derive task scaffold now — LLM will fill in feature-specific detail
-    task_scaffold = _build_task_scaffold(
-        topic=topic,
-        difficulty=difficulty,
+    concepts   = request_data.get('concepts', [])
+    concepts_str = (
+        f"\nCONCEPTS TO DEMONSTRATE: {', '.join(concepts)}"
+        f"\n  → Each task MUST address at least one of these concepts by name."
+        if concepts else ""
     )
 
-    return f"""You are an expert AI/ML assessment designer.
+    # Difficulty-aware complexity instruction injected into the prompt
+    difficulty_instruction = {
+        "Easy": (
+            "DIFFICULTY = Easy: Design basic features (5-10), straightforward target, "
+            "simple preprocessing (one encoding step, one scaling step). "
+            "Tasks should use a single baseline model with standard metrics."
+        ),
+        "Medium": (
+            "DIFFICULTY = Medium: Design realistic features (10-15) with mixed types, "
+            "moderate class imbalance if classification, real-world missing value patterns. "
+            "Tasks should compare 2 model families and include feature importance."
+        ),
+        "Hard": (
+            "DIFFICULTY = Hard: Design complex features (12-15) including derived/interaction "
+            "features, significant class imbalance, or skewed distribution. "
+            "Tasks should include hyperparameter tuning, cross-validation, SHAP analysis, "
+            "and a deployment consideration."
+        ),
+    }.get(difficulty, "DIFFICULTY = Medium: realistic features, moderate complexity.")
 
-Generate a {difficulty} difficulty AI/ML problem about: {topic}
+    return f"""You are a senior ML assessment architect. Your job is to design a SYNTHETIC dataset
+schema for a machine learning problem. You generate SCHEMA ONLY — no data rows.
 
-RULES:
-- Choose feature names SPECIFIC and REALISTIC for this topic (10-15 features).
-  Do NOT use generic names like "feature1", "feature2".
-  Example — customer churn: monthly_bill, tenure_months, num_complaints, contract_type
-  Example — house prices: sqft_living, num_bedrooms, num_bathrooms, zip_code, year_built
-  Example — fraud detection: transaction_amount, merchant_category, hour_of_day, distance_from_home
-  Example — medical: age, bmi, blood_pressure, cholesterol, smoker, glucose_level
-- feature_types: for each feature specify EXACTLY one of these formats:
-    numerical (continuous, range: X to Y)    ← numbers only, NO units like GB/Mbps/months
-    numerical (integer, range: X to Y)       ← numbers only, NO units
-    categorical (values: A, B, C)            ← comma separated values
-  BAD: "numerical (continuous, range: 50 to 500 GB)"   ← never add units
-  GOOD: "numerical (continuous, range: 50 to 500)"     ← numbers only
-- target variable MUST NOT appear in features list.
-- Do NOT generate any data rows — dataset will be generated programmatically.
-- ALL fields below are REQUIRED. Do not leave any field empty or as a placeholder.
-- The tasks array below is PRE-STRUCTURED for this topic and difficulty.
-  You MUST expand each task by inserting the ACTUAL feature names you designed above.
-  Replace ALL placeholders like [feature_name] or generic words with the real feature names.
-  Do NOT change the task structure or add new tasks — only fill in the feature-specific details.
-- preprocessing_requirements must name ACTUAL features from your features list.
-- evaluationCriteria must match the target_type.
+═══════════════════════════════════════════════════════
+TOPIC    : {topic}
+DIFFICULTY: {difficulty}{concepts_str}
+═══════════════════════════════════════════════════════
 
-Return ONLY this JSON (no data array):
+{difficulty_instruction}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STRICT FEATURE NAMING RULES (VIOLATIONS CAUSE REJECTION)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ REQUIRED: Every feature name MUST be domain-specific and self-explanatory.
+❌ FORBIDDEN: feature_0, feature_1, feature_2 ... feature_N
+❌ FORBIDDEN: var_1, col_1, x_1, f1, feat1, attribute_1
+❌ FORBIDDEN: any name that does not describe what it measures
+
+Domain-specific examples (use these as a guide for YOUR topic):
+  customer churn  → tenure_months, monthly_charge, num_support_calls, contract_type, has_fiber_optic
+  house prices    → sqft_living, num_bedrooms, year_built, garage_spaces, neighborhood_quality
+  fraud detection → transaction_amount, merchant_category, hour_of_day, distance_from_home, is_foreign
+  medical         → age, bmi, blood_pressure_systolic, cholesterol_level, smoker_status, glucose_mg_dl
+  loan default    → loan_amount, annual_income, debt_to_income_ratio, credit_score, employment_years
+  sentiment NLP   → review_length, avg_word_length, exclamation_count, polarity_score, neg_word_ratio
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FEATURE TYPE FORMAT (EXACT)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use EXACTLY one of:
+  numerical (continuous, range: X to Y)   ← float values, NO units in string
+  numerical (integer, range: X to Y)      ← int values, NO units in string
+  categorical (values: A, B, C)           ← comma-separated category values
+
+BAD:  "numerical (continuous, range: 50 to 500 GB)"    ← no units
+BAD:  "numerical (continuous, range: 10 Mbps to 1000)" ← no units
+GOOD: "numerical (continuous, range: 50 to 500)"
+GOOD: "categorical (values: monthly, annual, bi-annual)"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Each task MUST:
+  - Reference ACTUAL feature names you defined (minimum 2 features per task)
+  - Be specific to the domain of '{topic}' — NOT generic boilerplate
+  - Match the difficulty level above
+  - Address the requested concepts if provided
+
+FORBIDDEN task phrases (do not use these):
+  "load the dataset and inspect it"
+  "plot correlations between features"
+  "train at least 2 models"
+  "evaluate using appropriate metrics"
+  Any sentence that could apply to ANY dataset unchanged
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EVALUATION CRITERIA RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Match evaluationCriteria to target_type EXACTLY:
+  binary/multiclass classification → Accuracy, Precision, Recall, F1-Score, ROC-AUC
+  continuous/regression            → RMSE, MAE, R² Score, MAPE
+  clustering                       → Silhouette Score, Inertia, Davies-Bouldin Index
+Do NOT mix regression and classification metrics.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT — RETURN ONLY VALID JSON
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {{
-  "problemStatement": "Detailed real-world problem description for {topic} — explain the business/research context, who uses this, and what decision it enables.",
+  "problemStatement": "2-3 sentence real-world problem for '{topic}': who needs this, what decision it enables, what happens without it.",
   "dataset": {{
-    "description": "What this dataset represents in real business/research context for {topic}",
-    "features": ["realistic_name_1", "realistic_name_2", "...10-15 names specific to {topic}"],
+    "description": "What this SYNTHETIC dataset represents in the real-world context of '{topic}'",
+    "features": ["domain_specific_name_1", "domain_specific_name_2", "...10-15 names for {topic}"],
     "feature_types": {{
-      "realistic_name_1": "numerical (continuous, range: 20 to 150)",
-      "realistic_name_2": "categorical (values: monthly, annual, weekly)"
+      "domain_specific_name_1": "numerical (continuous, range: 20 to 150)",
+      "domain_specific_name_2": "categorical (values: option_a, option_b, option_c)"
     }},
-    "target": "target_variable_name",
-    "target_type": "binary (0: label0, 1: label1) OR continuous OR multiclass (classes: A, B, C)",
+    "target": "target_variable_name_specific_to_{topic.replace(' ','_')}",
+    "target_type": "binary (0: no_event, 1: event) OR continuous OR multiclass (classes: A, B, C)",
     "class_distribution": {{"class0": 70, "class1": 30}},
     "size": "400 samples"
   }},
   "tasks": [
-{task_scaffold}
+    "Task 1: [Specific to {topic} — name at least 2 actual feature names from above. State what domain-specific patterns to look for in the data.]",
+    "Task 2: [Name which specific features need encoding by name, which need scaling by name. State whether stratification is needed.]",
+    "Task 3: [Name 2-3 specific plots relevant to {topic} with actual feature names on axes — e.g. 'plot tenure_months vs churn_flag coloured by contract_type'.]",
+    "Task 4: [Name 2 algorithms justified for this exact target_type and domain. State evaluation metrics. Include difficulty-appropriate depth.]",
+    "Task 5: [Domain-specific business insight questions referencing actual feature names. Answer what the model reveals about the real-world problem.]"
   ],
   "preprocessing_requirements": [
-    "Specific step naming an ACTUAL feature from the features list above",
-    "Specific step naming another ACTUAL feature",
-    "Specific step for data quality or imbalance relevant to this dataset"
+    "Encode [actual_categorical_feature_name] using LabelEncoder / OneHotEncoder",
+    "Scale [actual_numerical_feature_name_1] and [actual_numerical_feature_name_2] using StandardScaler",
+    "Handle class imbalance / missing values / skew — specific to this dataset"
   ],
-  "expectedApproach": "Name 2-3 specific ML algorithms suited for {topic} and explain WHY each fits this target_type and feature set.",
-  "evaluationCriteria": ["metric appropriate for this target_type", "second metric", "third metric"],
+  "expectedApproach": "Name 2-3 algorithms for '{topic}' with WHY each suits this target_type, feature types, and domain.",
+  "evaluationCriteria": ["metric_matched_to_target_type_1", "metric_2", "metric_3"],
   "difficulty": "{difficulty}"
 }}
 
@@ -3230,11 +2993,14 @@ def generate_aiml_dataset(schema: dict, num_rows: int = 150) -> list:
 # ============================================================================
 
 def validate_aiml_response(obj: dict) -> None:
+    """
+    Structural validation — checks dataset schema integrity.
+    """
     if "dataset" not in obj:
         return
 
-    dataset = obj["dataset"]
-    target = dataset.get("target")
+    dataset  = obj["dataset"]
+    target   = dataset.get("target")
     features = dataset.get("features", [])
 
     if not target:
@@ -3244,8 +3010,6 @@ def validate_aiml_response(obj: dict) -> None:
     if target in features:
         raise ValueError(f"DATA LEAKAGE: Target '{target}' in features list")
 
-    # Pass 2 generates data rows programmatically — skip data checks if absent.
-    # This is expected behaviour for the two-pass AIML pipeline.
     if "data" not in dataset or not dataset["data"]:
         logger.info("AIML validation: no data array (Pass 2 will generate rows) — schema checks passed")
         return
@@ -3262,10 +3026,10 @@ def validate_aiml_response(obj: dict) -> None:
         raise ValueError(f"DATA LEAKAGE: Target '{target}' in data rows")
 
     expected_features = set(features)
-    actual_features = set(first_row.keys())
+    actual_features   = set(first_row.keys())
     if expected_features != actual_features:
         missing = expected_features - actual_features
-        extra = actual_features - expected_features
+        extra   = actual_features   - expected_features
         logger.warning(
             f"Feature mismatch — missing: {missing}, extra: {extra} — "
             f"reconciling features list to match actual data columns"
@@ -3283,11 +3047,14 @@ def validate_aiml_response(obj: dict) -> None:
 
 
 def validate_and_fix_aiml_response(obj: dict) -> dict:
+    """
+    Auto-fix layer — removes target from features if leaked, then validates.
+    """
     if "dataset" not in obj:
         return obj
 
-    dataset = obj["dataset"]
-    target = dataset.get("target")
+    dataset  = obj["dataset"]
+    target   = dataset.get("target")
     features = dataset.get("features", [])
 
     if target and target in features:
@@ -3301,6 +3068,125 @@ def validate_and_fix_aiml_response(obj: dict) -> dict:
 
     validate_aiml_response(obj)
     return obj
+
+
+def validate_aiml_output(
+    result: dict,
+    topic: str,
+    concepts: list,
+    difficulty: str,
+    matched_dataset: dict | None = None,
+) -> tuple:
+    """
+    Semantic validation layer — runs AFTER LLM generation.
+
+    Checks:
+      1. Problem statement is non-trivial and exists
+      2. Tasks reference actual feature names (not generic placeholders)
+      3. Difficulty field matches what was requested — auto-corrects if not
+      4. No generic feature names (feature_0, feature_1, ...) leaked through
+      5. evaluationCriteria match target_type — auto-corrects if not
+      6. Concepts are reflected in at least one task
+      7. If library dataset was matched, problem domain is consistent
+
+    Returns (is_valid: bool, issues: list[str])
+    """
+    issues = []
+    topic_lower = topic.lower()
+
+    # Check 1: problem statement
+    stmt = result.get("problemStatement", "")
+    if not stmt or len(stmt) < 50:
+        issues.append("problemStatement missing or too short (< 50 chars)")
+
+    # Check 2: difficulty auto-correct
+    result_diff = result.get("difficulty", "").lower()
+    if result_diff and result_diff != difficulty.lower():
+        logger.warning(
+            f"Difficulty mismatch: requested='{difficulty}' returned='{result_diff}' — auto-correcting"
+        )
+        result["difficulty"] = difficulty
+
+    # Check 3: no generic feature names
+    features = result.get("dataset", {}).get("features", [])
+    generic_pattern = re.compile(r'^(feature_?\d+|var_?\d+|col_?\d+|x_?\d+|f\d+)$', re.IGNORECASE)
+    generic_features = [f for f in features if generic_pattern.match(f)]
+    if generic_features:
+        issues.append(
+            f"Generic feature names detected: {generic_features[:5]}. "
+            f"Features must be domain-specific for topic='{topic}'"
+        )
+
+    # Check 4: tasks reference feature names
+    tasks = result.get("tasks", [])
+    if features and tasks:
+        tasks_text = " ".join(tasks).lower()
+        matches    = [f for f in features if f.lower() in tasks_text]
+        if len(matches) < 2:
+            issues.append(
+                f"Tasks do not reference dataset features. "
+                f"Only {len(matches)}/{len(features)} features mentioned."
+            )
+
+    # Check 5: evaluationCriteria match target_type — auto-correct
+    target_type   = result.get("dataset", {}).get("target_type", "").lower()
+    eval_criteria = [c.lower() for c in result.get("evaluationCriteria", [])]
+    if target_type and eval_criteria:
+        is_regression_type        = "continuous" in target_type
+        regression_metrics        = {"rmse", "mae", "r²", "r2", "mse", "mape"}
+        classification_metrics    = {"accuracy", "f1", "precision", "recall", "roc", "auc"}
+        has_regression_metric     = any(m in " ".join(eval_criteria) for m in regression_metrics)
+        has_classification_metric = any(m in " ".join(eval_criteria) for m in classification_metrics)
+
+        if is_regression_type and not has_regression_metric:
+            logger.warning("evaluationCriteria mismatch: continuous target but classification metrics — auto-fixing")
+            result["evaluationCriteria"] = [
+                "Root Mean Squared Error (RMSE)", "Mean Absolute Error (MAE)", "R² Score"
+            ]
+        elif not is_regression_type and not has_classification_metric and has_regression_metric:
+            logger.warning("evaluationCriteria mismatch: classification target but regression metrics — auto-fixing")
+            result["evaluationCriteria"] = [
+                "Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"
+            ]
+
+    # Check 6: concept coverage in tasks
+    if concepts and tasks:
+        tasks_text_lower = " ".join(tasks).lower()
+        uncovered = []
+        for concept in concepts:
+            concept_words = [w for w in concept.lower().split() if len(w) > 3]
+            if concept_words and not any(w in tasks_text_lower for w in concept_words):
+                uncovered.append(concept)
+        if len(uncovered) > max(1, len(concepts) // 2):
+            issues.append(
+                f"Concepts not reflected in tasks: {uncovered}. "
+                f"Tasks should address the requested concepts."
+            )
+
+    # Check 7: library dataset domain consistency
+    if matched_dataset:
+        ds_domain  = matched_dataset.get("domain", "").lower()
+        ds_name    = matched_dataset.get("name", "").lower()
+        stmt_lower = stmt.lower()
+        domain_words = set(ds_domain.replace("/", " ").split())
+        name_words   = set(w for w in ds_name.split() if len(w) > 3)
+        combined     = domain_words | name_words
+        if combined and not any(w in stmt_lower for w in combined):
+            issues.append(
+                f"Problem statement does not reflect dataset domain '{ds_domain}' "
+                f"or name '{matched_dataset.get('name')}'. "
+                f"The problem must be grounded in the actual dataset context."
+            )
+
+    is_valid = len(issues) == 0
+    if not is_valid:
+        logger.warning(
+            f"AIML output validation FAILED for topic='{topic}': " + " | ".join(issues)
+        )
+    else:
+        logger.info(f"AIML output validation PASSED for topic='{topic}'")
+
+    return is_valid, issues
 
 
 def calculate_aiml_token_limit(request_data: dict) -> int:
@@ -3666,6 +3552,21 @@ async def generate_aiml(request: AIMLGenerationRequest):
                     result["evaluationCriteria"] = ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC Score"]
 
             result["dataset_strategy"] = "synthetic"
+
+            # ── Semantic validation of generated output ────────────────────
+            topic_req     = item_data.get("topic", "")
+            concepts_req  = item_data.get("concepts", [])
+            difficulty_req = item_data.get("difficulty", "Medium")
+            _is_valid, _issues = validate_aiml_output(
+                result, topic_req, concepts_req, difficulty_req, matched_dataset=None
+            )
+            if not _is_valid:
+                logger.warning(
+                    f"Synthetic AIML output has quality issues — returning with warnings: {_issues}"
+                )
+                result["validation_warnings"] = _issues
+            # ──────────────────────────────────────────────────────────────
+
             save_to_cache(cache_key, result)
 
             JOB_STORE[job_id] = {
@@ -4310,20 +4211,438 @@ def _load_aiml_faiss() -> bool:
         return False
 
 
+
+# ============================================================================
+# AIML DATASET REGISTRY
+# ─────────────────────────────────────────────────────────────────────────────
+# Maps topic-signal keywords → required catalog tags.
+# When a topic matches an entry here, the returned dataset MUST contain ALL
+# of the listed required_tags in its own tags list.  If no catalog entry
+# satisfies both the semantic/keyword score AND these required tags, the
+# system falls back to synthetic generation rather than returning a wrong
+# dataset.
+#
+# This is the single source of truth that prevents FAISS from drifting:
+#   "flower classification" → beans (plant), NOT fashion-mnist (retail)
+#   "iris"                 → sklearn-iris, NOT penguins
+#   "customer churn"       → churn dataset, NOT generic binary classification
+#
+# RULES FOR EDITING:
+#   - topic_signals: lowercase substrings that trigger this entry
+#   - required_tags: ALL must appear in the matched dataset's tags
+#   - preferred_ids: catalog IDs checked first before any search (exact match)
+#   - forbidden_ids: catalog IDs that must NEVER be returned for this topic
+# ============================================================================
+
+_AIML_DATASET_REGISTRY: list = [
+    # ── Classification — specific named datasets ──────────────────────────
+    {
+        "topic_signals": ["iris", "iris flower", "iris classification"],
+        "required_tags": ["flowers"],
+        "preferred_ids": ["sklearn-iris"],
+        "forbidden_ids": ["seaborn-penguins", "hf-beans"],
+    },
+    {
+        "topic_signals": ["penguin", "palmer penguin"],
+        "required_tags": ["biology"],
+        "preferred_ids": ["seaborn-penguins"],
+        "forbidden_ids": ["sklearn-iris"],
+    },
+    {
+        "topic_signals": ["titanic", "titanic survival", "passenger survival"],
+        "required_tags": ["titanic"],
+        "preferred_ids": ["seaborn-titanic", "openml-titanic", "openml-titanic-survival"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["mnist", "handwritten digit", "digit recognition", "handwriting recognition"],
+        "required_tags": ["digits"],
+        "preferred_ids": ["keras-mnist", "openml-mnist-784", "sklearn-digits"],
+        "forbidden_ids": ["keras-fashion-mnist"],
+    },
+    {
+        "topic_signals": ["fashion mnist", "clothing classification", "apparel classification", "fashion product"],
+        "required_tags": ["fashion"],
+        "preferred_ids": ["keras-fashion-mnist"],
+        "forbidden_ids": ["keras-mnist"],
+    },
+    {
+        "topic_signals": ["cifar", "cifar-10", "cifar10", "object recognition", "object classification"],
+        "required_tags": ["object-recognition"],
+        "preferred_ids": ["keras-cifar10", "hf-cifar10-hf"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["flower classification", "flower recognition", "flower detection"],
+        "required_tags": ["agriculture"],
+        "preferred_ids": ["hf-beans", "hf-oxford-pets"],
+        "forbidden_ids": ["sklearn-iris", "keras-fashion-mnist", "keras-mnist"],
+    },
+    # ── Churn / Retention ─────────────────────────────────────────────────
+    {
+        "topic_signals": ["customer churn", "churn prediction", "churn analysis",
+                          "churn detection", "user churn", "subscriber churn",
+                          "retention prediction", "customer retention"],
+        "required_tags": ["churn"],
+        "preferred_ids": ["openml-telco-churn", "openml-bank-churn"],
+        "forbidden_ids": ["sklearn-make-classification", "sklearn-make-blobs",
+                          "sklearn-make-moons", "sklearn-make-circles"],
+    },
+    # ── HR / Attrition ────────────────────────────────────────────────────
+    {
+        "topic_signals": ["employee attrition", "hr attrition", "staff turnover",
+                          "employee churn", "workforce attrition", "talent retention"],
+        "required_tags": ["attrition"],
+        "preferred_ids": ["openml-hr-attrition"],
+        "forbidden_ids": ["openml-telco-churn"],
+    },
+    # ── Fraud / Anomaly ───────────────────────────────────────────────────
+    {
+        "topic_signals": ["fraud detection", "credit card fraud", "transaction fraud",
+                          "payment fraud", "financial fraud"],
+        "required_tags": ["fraud"],
+        "preferred_ids": ["openml-fraud-detection"],
+        "forbidden_ids": ["sklearn-make-classification"],
+    },
+    # ── Healthcare ────────────────────────────────────────────────────────
+    {
+        "topic_signals": ["diabetes prediction", "diabetes detection", "diabetes classification",
+                          "blood sugar prediction", "glucose prediction"],
+        "required_tags": ["diabetes"],
+        "preferred_ids": ["openml-pima-diabetes", "sklearn-diabetes"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["heart disease", "cardiac prediction", "heart attack prediction",
+                          "cardiovascular", "heart failure"],
+        "required_tags": ["heart-disease"],
+        "preferred_ids": ["openml-heart-disease", "statsmodels-heart"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["breast cancer", "cancer detection", "tumor classification",
+                          "malignant benign", "cancer prediction"],
+        "required_tags": ["cancer"],
+        "preferred_ids": ["sklearn-breast-cancer"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["stroke prediction", "stroke detection", "stroke risk"],
+        "required_tags": ["stroke"],
+        "preferred_ids": ["openml-stroke-prediction"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["covid", "covid-19", "coronavirus", "pandemic prediction"],
+        "required_tags": ["covid-19"],
+        "preferred_ids": ["openml-covid-symptoms"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["obesity", "bmi prediction", "weight classification"],
+        "required_tags": ["obesity"],
+        "preferred_ids": ["openml-obesity-levels"],
+        "forbidden_ids": [],
+    },
+    # ── Finance / Credit ──────────────────────────────────────────────────
+    {
+        "topic_signals": ["credit risk", "loan default", "credit default",
+                          "credit scoring", "default prediction"],
+        "required_tags": ["credit"],
+        "preferred_ids": ["openml-default-credit", "openml-credit-g",
+                          "openml-loan-approval", "openml-givemecredit"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["stock price", "stock prediction", "stock market",
+                          "financial forecasting", "equity prediction"],
+        "required_tags": ["stock"],
+        "preferred_ids": ["openml-stock-sp500", "openml-bitcoin-price"],
+        "forbidden_ids": [],
+    },
+    # ── NLP ───────────────────────────────────────────────────────────────
+    {
+        "topic_signals": ["sentiment analysis", "opinion mining", "review sentiment",
+                          "text sentiment", "positive negative classification"],
+        "required_tags": ["sentiment"],
+        "preferred_ids": ["hf-imdb", "hf-sst2", "hf-yelp-review",
+                          "nltk-movie-reviews", "keras-imdb"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["spam detection", "email spam", "sms spam", "spam classification"],
+        "required_tags": ["spam"],
+        "preferred_ids": ["hf-spam-detection"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["fake news", "misinformation detection", "news credibility"],
+        "required_tags": ["fake-news"],
+        "preferred_ids": ["hf-fake-news"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["named entity recognition", "ner", "entity extraction",
+                          "information extraction"],
+        "required_tags": ["ner"],
+        "preferred_ids": ["hf-conll2003"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["text summarization", "document summarization", "abstractive summarization",
+                          "extractive summarization", "news summarization"],
+        "required_tags": ["summarization"],
+        "preferred_ids": ["hf-pubmed-summarization", "hf-abstractive-summarization"],
+        "forbidden_ids": [],
+    },
+    # ── CV / Image ────────────────────────────────────────────────────────
+    {
+        "topic_signals": ["medical image", "chest x-ray", "xray classification",
+                          "pneumonia detection", "radiology"],
+        "required_tags": ["medical-imaging"],
+        "preferred_ids": ["hf-chest-xray", "hf-pneumonia-xray", "hf-brain-tumor-mri"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["plant disease", "crop disease", "leaf disease",
+                          "plant classification", "agriculture classification"],
+        "required_tags": ["agriculture"],
+        "preferred_ids": ["hf-beans", "hf-plant-village"],
+        "forbidden_ids": ["sklearn-iris"],
+    },
+    {
+        "topic_signals": ["face emotion", "facial emotion", "emotion recognition",
+                          "facial expression", "affect recognition"],
+        "required_tags": ["emotion"],
+        "preferred_ids": ["hf-emotion-face"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["traffic sign", "road sign detection", "sign recognition",
+                          "autonomous driving"],
+        "required_tags": ["traffic-signs"],
+        "preferred_ids": ["hf-traffic-signs"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["satellite image", "remote sensing", "aerial image",
+                          "land cover", "land use classification"],
+        "required_tags": ["satellite"],
+        "preferred_ids": ["hf-eurosat", "hf-satellite-land-use"],
+        "forbidden_ids": [],
+    },
+    # ── Time Series ───────────────────────────────────────────────────────
+    {
+        "topic_signals": ["energy forecasting", "electricity forecasting",
+                          "power consumption", "energy prediction"],
+        "required_tags": ["energy"],
+        "preferred_ids": ["openml-electricity", "hf-ett-time-series",
+                          "openml-power-consumption"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["weather forecasting", "temperature prediction",
+                          "climate forecasting", "meteorological prediction"],
+        "required_tags": ["weather"],
+        "preferred_ids": ["hf-weather-jena"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["predictive maintenance", "equipment failure",
+                          "rul prediction", "remaining useful life", "iot anomaly"],
+        "required_tags": ["predictive-maintenance"],
+        "preferred_ids": ["openml-iot-predictive-maintenance"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["air quality", "pollution prediction", "pm2.5", "aqi prediction"],
+        "required_tags": ["air-quality"],
+        "preferred_ids": ["openml-air-quality", "openml-pm25-beijing"],
+        "forbidden_ids": [],
+    },
+    # ── Recommendation / Clustering ───────────────────────────────────────
+    {
+        "topic_signals": ["recommendation", "movie recommendation", "collaborative filtering",
+                          "rating prediction", "recommender system"],
+        "required_tags": ["recommendation"],
+        "preferred_ids": ["openml-movielens-100k"],
+        "forbidden_ids": [],
+    },
+    {
+        "topic_signals": ["customer segmentation", "market segmentation",
+                          "user clustering", "k-means clustering"],
+        "required_tags": ["segmentation"],
+        "preferred_ids": ["openml-mall-customers"],
+        "forbidden_ids": [],
+    },
+    # ── Network / Security ────────────────────────────────────────────────
+    {
+        "topic_signals": ["network intrusion", "intrusion detection", "cybersecurity",
+                          "dos attack", "network attack detection"],
+        "required_tags": ["network-intrusion"],
+        "preferred_ids": ["openml-nsl-kdd"],
+        "forbidden_ids": [],
+    },
+    # ── Housing / Real Estate ─────────────────────────────────────────────
+    {
+        "topic_signals": ["house price", "housing price", "real estate prediction",
+                          "property price", "home price"],
+        "required_tags": ["real-estate"],
+        "preferred_ids": ["sklearn-california-housing"],
+        "forbidden_ids": [],
+    },
+    # ── Supply Chain / Logistics ──────────────────────────────────────────
+    {
+        "topic_signals": ["supply chain", "delivery prediction", "logistics",
+                          "shipping delay", "on-time delivery"],
+        "required_tags": ["supply-chain"],
+        "preferred_ids": ["openml-ecommerce-shipping"],
+        "forbidden_ids": [],
+    },
+]
+
+# ── Concept → expected tag mapping ───────────────────────────────────────────
+# If a concept keyword is present in the request, the matched dataset's tags
+# should contain at least one of the allowed_tags.  This prevents concept drift:
+# e.g. concept="time series forecasting" should not match a tabular classifier.
+_CONCEPT_TAG_MAP: dict = {
+    "time series":        ["time-series", "forecasting", "arima", "lstm", "temporal"],
+    "forecasting":        ["time-series", "forecasting", "regression"],
+    "nlp":                ["nlp", "text", "sentiment", "bert", "language"],
+    "text classification": ["nlp", "text", "classification"],
+    "image classification": ["cv", "image", "cnn", "vision"],
+    "computer vision":    ["cv", "image", "cnn", "vision"],
+    "deep learning":      ["deep-learning", "cnn", "lstm", "transformer", "bert"],
+    "transfer learning":  ["transfer-learning", "cnn", "resnet"],
+    "clustering":         ["clustering", "unsupervised", "segmentation", "kmeans"],
+    "anomaly detection":  ["anomaly-detection", "fraud", "intrusion", "outlier"],
+    "recommendation":     ["recommendation", "collaborative-filtering", "ratings"],
+    "graph":              ["graph", "gnn", "node-classification"],
+    "regression":         ["regression", "continuous"],
+    "classification":     ["classification", "binary", "multiclass"],
+    "imbalanced":         ["imbalanced"],
+    "fraud":              ["fraud", "anomaly-detection"],
+    "churn":              ["churn"],
+    "sentiment":          ["sentiment", "nlp"],
+    "speech":             ["speech", "audio", "asr"],
+    "audio":              ["audio", "speech", "mfcc"],
+}
+
+
+def _registry_lookup(topic: str, concepts: list, catalog: list) -> dict | None:
+    """
+    Check the registry for an exact topic signal match.
+    Returns the best preferred_id dataset from the catalog if found,
+    or the first catalog entry that satisfies required_tags.
+    Returns None if topic does not match any registry entry.
+    """
+    topic_lower = topic.lower()
+    all_text    = topic_lower + " " + " ".join(c.lower() for c in concepts)
+
+    for entry in _AIML_DATASET_REGISTRY:
+        # Check if any signal matches
+        matched_signal = any(sig in all_text for sig in entry["topic_signals"])
+        if not matched_signal:
+            continue
+
+        required_tags = set(entry.get("required_tags", []))
+        forbidden_ids = set(entry.get("forbidden_ids", []))
+        preferred_ids = entry.get("preferred_ids", [])
+
+        # Try preferred IDs first — exact catalog lookup
+        for pid in preferred_ids:
+            for ds in catalog:
+                if ds["id"] == pid and pid not in forbidden_ids:
+                    logger.info(f"Registry exact match: '{ds['name']}' for topic='{topic}'")
+                    return ds
+
+        # Fall back to required_tags scan within catalog
+        for ds in catalog:
+            if ds["id"] in forbidden_ids:
+                continue
+            ds_tags = set(t.lower() for t in ds.get("tags", []))
+            if required_tags and required_tags.issubset(ds_tags):
+                logger.info(
+                    f"Registry tag match: '{ds['name']}' "
+                    f"(required_tags={required_tags}) for topic='{topic}'"
+                )
+                return ds
+
+        # Signal matched but no valid dataset found — stop here, do NOT fall through
+        # to FAISS which would return the wrong dataset
+        logger.warning(
+            f"Registry signal matched '{topic}' but no valid catalog entry "
+            f"satisfies required_tags={required_tags} — will use synthetic"
+        )
+        return None  # Explicit: synthetic is better than wrong dataset
+
+    return None  # No registry entry matched — proceed to FAISS/keyword
+
+
+def _concept_tags_satisfied(dataset: dict, concepts: list) -> bool:
+    """
+    Check that the matched dataset's tags are compatible with the requested concepts.
+    Prevents concept drift — e.g. concept='time series' matched to a tabular classifier.
+    Returns True if no concept conflict is detected.
+    """
+    if not concepts:
+        return True
+
+    ds_tags = set(t.lower() for t in dataset.get("tags", []))
+    ds_category = dataset.get("category", "").lower()
+    ds_tags.add(ds_category)  # category counts as a tag for this check
+
+    for concept in concepts:
+        concept_lower = concept.lower()
+        for key, allowed_tags in _CONCEPT_TAG_MAP.items():
+            if key in concept_lower:
+                # At least one allowed tag must appear in dataset tags
+                if not any(at in ds_tags for at in allowed_tags):
+                    logger.warning(
+                        f"Concept conflict: concept='{concept}' requires one of "
+                        f"{allowed_tags} but dataset '{dataset['name']}' has tags={ds_tags}"
+                    )
+                    return False
+    return True
+
+
+def _difficulty_compatible(dataset: dict, difficulty: str) -> bool:
+    """
+    Check difficulty compatibility.
+    IMPORTANT: same dataset is used across difficulties — only task complexity changes.
+    This function checks if a dataset is broadly appropriate for the difficulty level,
+    NOT that it must be an exact match.  A 'Hard' dataset can also be used for Easy
+    (task complexity is scaled by _build_task_scaffold, not by swapping datasets).
+    """
+    ds_diffs = [d.lower() for d in dataset.get("difficulty", [])]
+    if not ds_diffs:
+        return True  # No difficulty restriction in catalog entry
+    difficulty_lower = difficulty.lower()
+    # Hard can always use Medium/Hard datasets; Easy can use Easy/Medium
+    compat = {
+        "easy":   {"easy", "medium"},
+        "medium": {"easy", "medium", "hard"},
+        "hard":   {"easy", "medium", "hard"},
+    }
+    allowed = compat.get(difficulty_lower, {"easy", "medium", "hard"})
+    return bool(set(ds_diffs) & allowed)
+
+
 def _match_dataset(topic: str, concepts: list, difficulty: str):
     """
-    Production-grade dataset matching using FAISS semantic search.
-    Falls back to keyword matching if FAISS index not available.
+    Production-grade dataset matching.
 
-    FAISS path:
-      - Embeds topic + concepts into vector
-      - Searches top-K semantically similar datasets
-      - Filters by difficulty
-      - Returns best match
+    Pipeline (in order, stop at first success):
+      1. Registry lookup  — exact topic signal → required_tags check
+      2. FAISS search     — semantic similarity, then _validate_match()
+      3. Keyword fallback — tag/domain overlap, then _validate_match()
+      4. None             — caller falls back to synthetic generation
 
-    Keyword fallback:
-      - Scores datasets by tag/domain word overlap
-      - Returns best match if score >= 3
+    Key properties:
+      - Registry always wins over FAISS for known topics
+      - FAISS result is validated for concept compatibility before returning
+      - Difficulty does NOT swap datasets — all difficulties can use the same dataset
+      - Forbidden dataset list prevents known-wrong pairings
     """
     catalog = _load_aiml_catalog()
     if not catalog:
@@ -4331,43 +4650,78 @@ def _match_dataset(topic: str, concepts: list, difficulty: str):
 
     difficulty_lower = difficulty.lower()
 
-    # ── FAISS semantic search ─────────────────────────────────────────────────
+    # ── Step 1: Registry lookup ───────────────────────────────────────────────
+    registry_result = _registry_lookup(topic, concepts, catalog)
+    if registry_result is not None:
+        # Registry returned a dataset — validate concept compatibility
+        if _concept_tags_satisfied(registry_result, concepts):
+            return registry_result
+        else:
+            logger.warning(
+                f"Registry match '{registry_result['name']}' failed concept check "
+                f"for concepts={concepts} — falling back to FAISS"
+            )
+            # Do NOT return it; continue to FAISS
+
+    # ── Step 2: FAISS semantic search ─────────────────────────────────────────
     faiss_available = _load_aiml_faiss()
 
     if faiss_available:
         try:
-            query = f"{topic} {' '.join(concepts)} {difficulty} machine learning dataset"
+            query = f"{topic} {' '.join(concepts)} machine learning dataset"
             query_vec = _aiml_embed_model.encode(
                 [query],
                 convert_to_numpy=True,
                 normalize_embeddings=True
             ).astype(np.float32)
 
-            # Search top 20 — filter by difficulty after
-            scores, indices = _aiml_faiss_index.search(query_vec, min(20, _aiml_faiss_index.ntotal))
+            # Search top 30 — validate each result before accepting
+            scores, indices = _aiml_faiss_index.search(
+                query_vec, min(30, _aiml_faiss_index.ntotal)
+            )
 
             for idx, score in zip(indices[0], scores[0]):
                 if idx < 0 or idx >= len(_aiml_meta_cache):
                     continue
-                meta = _aiml_meta_cache[idx]
-                ds_diffs = [d.lower() for d in meta.get("difficulty", [])]
-                # Accept if difficulty matches OR difficulty list is empty
-                if difficulty_lower in ds_diffs or not ds_diffs:
-                    # Get full dataset from catalog
-                    catalog_idx = meta.get("index", idx)
-                    if catalog_idx < len(catalog):
-                        dataset = catalog[catalog_idx]
-                        logger.info(
-                            f"AIML FAISS match: '{dataset['name']}' "
-                            f"(semantic score={score:.3f}, difficulty={difficulty})"
-                        )
-                        return dataset
+                meta         = _aiml_meta_cache[idx]
+                catalog_idx  = meta.get("index", idx)
+                if catalog_idx >= len(catalog):
+                    continue
 
-            logger.info("AIML FAISS: no difficulty-matched result — trying keyword fallback")
+                dataset = catalog[catalog_idx]
+
+                # Guard 1: difficulty compatibility
+                if not _difficulty_compatible(dataset, difficulty_lower):
+                    continue
+
+                # Guard 2: concept compatibility — reject drift
+                if not _concept_tags_satisfied(dataset, concepts):
+                    logger.info(
+                        f"FAISS: skipping '{dataset['name']}' — concept mismatch "
+                        f"(score={score:.3f})"
+                    )
+                    continue
+
+                # Guard 3: minimum FAISS confidence threshold
+                # Below 0.25 the match is too weak — better to go synthetic
+                if score < 0.25:
+                    logger.info(
+                        f"FAISS: score {score:.3f} too low for '{dataset['name']}' "
+                        f"— stopping FAISS scan"
+                    )
+                    break
+
+                logger.info(
+                    f"AIML FAISS match: '{dataset['name']}' "
+                    f"(score={score:.3f}, difficulty={difficulty})"
+                )
+                return dataset
+
+            logger.info("AIML FAISS: no valid match after guards — trying keyword fallback")
         except Exception as e:
             logger.warning(f"AIML FAISS search failed: {e} — falling back to keyword")
 
-    # ── Keyword fallback ──────────────────────────────────────────────────────
+    # ── Step 3: Keyword fallback ──────────────────────────────────────────────
     topic_words   = set(topic.lower().split())
     concept_words = set(" ".join(concepts).lower().split())
     best_match    = None
@@ -4402,11 +4756,15 @@ def _match_dataset(topic: str, concepts: list, difficulty: str):
             best_score = score
             best_match = dataset
 
-    if best_score >= 3:
+    # Minimum score AND concept check before accepting keyword match
+    if best_score >= 4 and best_match and _concept_tags_satisfied(best_match, concepts):
         logger.info(f"AIML keyword match: '{best_match['name']}' (score={best_score})")
         return best_match
 
-    logger.info(f"No dataset match found (keyword score={best_score}) — using synthetic")
+    logger.info(
+        f"No valid dataset match (keyword score={best_score}, "
+        f"topic='{topic}') — using synthetic generation"
+    )
     return None
 
 
@@ -4415,17 +4773,6 @@ def _build_aiml_library_prompt(request_data: dict, dataset: dict) -> str:
     difficulty  = request_data.get("difficulty", "Medium")
     concepts    = request_data.get("concepts", [])
     concepts_str = ", ".join(concepts) if concepts else "general ML"
-
-    # Derive task scaffold from actual dataset metadata — not a template
-    task_scaffold = _build_task_scaffold(
-        topic        = topic,
-        difficulty   = difficulty,
-        target_type  = dataset.get("target_type", ""),
-        category     = dataset.get("category", ""),
-        domain       = dataset.get("domain", ""),
-        features_info= dataset.get("features_info", ""),
-        dataset_name = dataset.get("name", ""),
-    )
 
     return f"""You are an expert AI/ML assessment designer.
 
@@ -4452,22 +4799,22 @@ RULES:
 - Do NOT generate synthetic data.
 - expectedApproach must suggest algorithms appropriate for this dataset target type.
 - evaluationCriteria must match the target type (classification vs regression metrics).
-- The tasks array below is PRE-STRUCTURED for this dataset's modality, target type, and difficulty.
-  You MUST expand each task by inserting the ACTUAL column/feature names from this dataset.
-  Replace any generic references with specific feature names from the Features field above.
-  Do NOT change the task structure or add new tasks.
 - ALL fields are REQUIRED.
 
 Return ONLY this JSON:
 {{
   "problemStatement": "Detailed real-world problem description grounded in the actual dataset domain",
   "tasks": [
-{task_scaffold}
+    "Task 1: Data Loading and Exploration — load the {dataset.get('name', '')} dataset using the provided load_code. Examine the actual columns specific to this dataset. Display shape, first 10 rows, check missing values per column, data types, and summary statistics relevant to {topic}.",
+    "Task 2: Data Preprocessing — handle any missing values in this specific dataset. Identify which features from {dataset.get('name', '')} need encoding or normalization. Apply appropriate transformations. Split 80/20 train/test.",
+    "Task 3: Exploratory Data Analysis — visualize the {dataset.get('target', 'target')} distribution. Plot correlations between features in this {dataset.get('domain', 'domain')} dataset. Create 2-3 meaningful domain-specific plots for {topic}.",
+    "Task 4: Model Training — train at least 2 ML models best suited for this {dataset.get('target_type', '')} problem using {dataset.get('name', '')} features. Evaluate with metrics appropriate for this target type.",
+    "Task 5: Model Comparison and {dataset.get('domain', 'Domain')} Insights — compare model performance on this specific dataset. Identify the most predictive features. Provide actionable {dataset.get('domain', 'domain')}-specific recommendations for {topic}."
   ],
   "preprocessing_requirements": [
-    "Specific step 1 naming ACTUAL features from this dataset",
-    "Specific step 2 naming ACTUAL features from this dataset",
-    "Specific step 3 for data quality or imbalance relevant to this dataset"
+    "Specific step 1 for THIS dataset",
+    "Specific step 2 for THIS dataset",
+    "Specific step 3 for THIS dataset"
   ],
   "expectedApproach": "2-3 specific ML algorithms suited for this exact dataset with reasoning.",
   "evaluationCriteria": ["metric1", "metric2", "metric3"],
@@ -4580,6 +4927,22 @@ async def generate_aiml_library(request: AIMLLibraryRequest):
                         "generation_time_seconds": round(gen_time, 3),
                         "cache_hit": False,
                     }
+
+                    # ── Semantic validation of library output ──────────────
+                    _is_valid, _issues = validate_aiml_output(
+                        problem,
+                        item_data.get("topic", ""),
+                        item_data.get("concepts", []),
+                        item_data.get("difficulty", "Medium"),
+                        matched_dataset=matched,
+                    )
+                    if not _is_valid:
+                        logger.warning(
+                            f"Library AIML output has quality issues — returning with warnings: {_issues}"
+                        )
+                        problem["validation_warnings"] = _issues
+                    # ──────────────────────────────────────────────────────
+
                     save_to_cache(cache_key, problem)
                     JOB_STORE[job_id] = {
                         "status": "complete",
@@ -4592,6 +4955,16 @@ async def generate_aiml_library(request: AIMLLibraryRequest):
                     token_limit = calculate_aiml_token_limit(item_data)
                     result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
                     result["dataset_strategy"] = "synthetic_fallback"
+                    # Validate synthetic fallback too
+                    _is_valid, _issues = validate_aiml_output(
+                        result,
+                        item_data.get("topic", ""),
+                        item_data.get("concepts", []),
+                        item_data.get("difficulty", "Medium"),
+                        matched_dataset=None,
+                    )
+                    if not _is_valid:
+                        result["validation_warnings"] = _issues
                     save_to_cache(cache_key, result)
                     JOB_STORE[job_id] = {
                         "status": "complete",
@@ -4603,6 +4976,16 @@ async def generate_aiml_library(request: AIMLLibraryRequest):
                 token_limit = calculate_aiml_token_limit(item_data)
                 result = await add_to_batch_and_wait("aiml", item_data, cache_key, build_aiml_prompt, token_limit)
                 result["dataset_strategy"] = "synthetic"
+                # Validate no-match synthetic output
+                _is_valid, _issues = validate_aiml_output(
+                    result,
+                    item_data.get("topic", ""),
+                    item_data.get("concepts", []),
+                    item_data.get("difficulty", "Medium"),
+                    matched_dataset=None,
+                )
+                if not _is_valid:
+                    result["validation_warnings"] = _issues
                 save_to_cache(cache_key, result)
                 JOB_STORE[job_id] = {
                     "status": "complete",
